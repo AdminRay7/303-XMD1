@@ -21,7 +21,14 @@ module.exports = {
     botName:     str(process.env.BOT_NAME,     "303-XMD"),
     ownerNumber: str(process.env.OWNER_NUMBER, "254794376595"),
     ownerName:   str(process.env.OWNER_NAME,   "mr presenter"),
-    adminEmail:  str(process.env.ADMIN_EMAIL,  "ryanobanga243@gmail.com"),   // ← NEW
+
+    // Admin email — single string (used by frontend / sidebar)
+    adminEmail:  str(process.env.ADMIN_EMAIL,  "ryanobanga243@gmail.com"),
+
+    // Admin emails — array (used by index.js / server-side checks)
+    adminEmails: list(process.env.ADMIN_EMAIL, ["ryanobanga243@gmail.com"])
+                    .map(e => e.toLowerCase()),
+
     prefix:      str(process.env.PREFIX,       "."),
     footer:      str(process.env.FOOTER,       "303-XMD — THE LAST KEY"),
     version:     str(process.env.VERSION,      "2.0.0"),
