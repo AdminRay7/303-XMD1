@@ -7,28 +7,78 @@ const { User, ChannelSubscriber, ChannelPost } = require('./database/models');
 const messageStore = require('./lib/messageStore');
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 
-// ================= COMMAND LOADER =================
-// Drop any .js file into /commands and export { name, aliases?, execute }
-const commandCache = new Map();
-let cacheLoaded = false;
+// ================= HOT-RELOAD COMMAND LOADER =================
+// Watches /commands folder. Reloads on change (add / edit / delete).
+// No restart required. Subfolders become categories.
 
-function loadCommands() {
-    if (cacheLoaded) return;
-    const cmdPath = path.join(__dirname, 'commands');
-    if (!fs.existsSync(cmdPath)) { cacheLoaded = true; return; }
+const COMMANDS_DIR = path.join(__dirname, 'commands');
+const commandCache = new Map();
+let folderSignature = '';
+let lastScan = 0;
+const RESCAN_DEBOUNCE_MS = 2000;
+
+/**
+ * Compute a signature of the commands folder.
+ * Any file add/remove/mtime change alters this string.
+ */
+function computeFolderSignature(dir) {
+    if (!fs.existsSync(dir)) return '';
+    const parts = [];
+    const walk = (d) => {
+        for (const item of fs.readdirSync(d)) {
+            const full = path.join(d, item);
+            const stat = fs.statSync(full);
+            if (stat.isDirectory()) walk(full);
+            else if (item.endsWith('.js')) {
+                parts.push(`${item}:${stat.mtimeMs}`);
+            }
+        }
+    };
+    walk(dir);
+    return parts.sort().join('|');
+}
+
+function loadCommands(force = false) {
+    const now = Date.now();
+    if (!force && now - lastScan < RESCAN_DEBOUNCE_MS) return false;
+    lastScan = now;
+
+    if (!fs.existsSync(COMMANDS_DIR)) {
+        if (commandCache.size > 0) {
+            commandCache.clear();
+            console.log(fancy('📂 No commands folder — cache cleared.'));
+        }
+        return false;
+    }
+
+    const sig = computeFolderSignature(COMMANDS_DIR);
+    if (!force && sig === folderSignature) return false;
+
+    folderSignature = sig;
+    commandCache.clear();
 
     const walk = (dir) => {
         for (const item of fs.readdirSync(dir)) {
             const itemPath = path.join(dir, item);
-            if (fs.statSync(itemPath).isDirectory()) walk(itemPath);
-            else if (item.endsWith('.js')) {
+            const stat = fs.statSync(itemPath);
+            if (stat.isDirectory()) {
+                walk(itemPath);
+            } else if (item.endsWith('.js')) {
                 try {
+                    // Bust require cache so edits take effect
+                    delete require.cache[require.resolve(itemPath)];
                     const mod = require(itemPath);
-                    if (!mod || typeof mod.execute !== 'function') return;
-                    const names = [mod.name, ...(Array.isArray(mod.aliases) ? mod.aliases : [])]
-                        .filter(Boolean).map(s => s.toLowerCase());
+                    if (!mod || typeof mod.execute !== 'function') continue;
+
+                    const names = [
+                        mod.name,
+                        ...(Array.isArray(mod.aliases) ? mod.aliases : [])
+                    ].filter(Boolean).map(s => String(s).toLowerCase());
+
                     for (const n of names) {
-                        if (commandCache.has(n)) console.warn(`⚠️ Duplicate command: ${n}`);
+                        if (commandCache.has(n)) {
+                            console.warn(fancy(`⚠️ Duplicate command: ${n} (${item})`));
+                        }
                         commandCache.set(n, mod);
                     }
                 } catch (e) {
@@ -38,11 +88,18 @@ function loadCommands() {
         }
     };
 
-    walk(cmdPath);
-    cacheLoaded = true;
-    console.log(fancy(`✅ Loaded ${commandCache.size} command(s).`));
+    walk(COMMANDS_DIR);
+    console.log(fancy(`♻️  Reloaded ${commandCache.size} command(s).`));
+    return true;
 }
-loadCommands();
+
+// Initial scan
+loadCommands(true);
+
+// Background watcher (safe if nothing changes)
+setInterval(() => {
+    try { loadCommands(false); } catch (e) { console.error('Command watch:', e.message); }
+}, 3000).unref();
 
 // ================= DEBOUNCED USER SAVES =================
 const pendingUserSaves = new Map();
@@ -127,7 +184,6 @@ module.exports = async (conn, m, userId = "default") => {
                     msg.message?.imageMessage?.caption ||
                     msg.message?.videoMessage?.caption || '';
 
-                // Log post to MongoDB
                 if (config.logChannelPosts) {
                     try {
                         await ChannelPost.create({
@@ -142,7 +198,6 @@ module.exports = async (conn, m, userId = "default") => {
                     } catch (e) { console.error("ChannelPost log:", e.message); }
                 }
 
-                // Auto-react
                 if (config.autoReactChannel) {
                     try {
                         let emoji = null;
@@ -157,7 +212,6 @@ module.exports = async (conn, m, userId = "default") => {
                     } catch (e) { console.error("Channel react:", e.message); }
                 }
 
-                // Forward to owner + extra targets
                 const targets = [...(config.forwardChannelTo || [])];
                 if (config.ownerNumber) targets.push(config.ownerNumber + '@s.whatsapp.net');
                 for (const t of targets) {
@@ -167,7 +221,6 @@ module.exports = async (conn, m, userId = "default") => {
                     } catch (e) { console.error(`Forward → ${t}:`, e.message); }
                 }
 
-                // Cross-post webhook
                 if (config.crossPostWebhook) {
                     try {
                         await axios.post(config.crossPostWebhook, {
@@ -178,7 +231,7 @@ module.exports = async (conn, m, userId = "default") => {
                     } catch (e) { console.error("Cross-post:", e.message); }
                 }
             }
-            return; // no command parsing inside channels
+            return;
         }
 
         // ================= CONTEXT =================
@@ -189,6 +242,11 @@ module.exports = async (conn, m, userId = "default") => {
 
         // ================= BUTTON ROUTER =================
         if (await routeButtonInteraction(conn, msg, cmdCtx)) return;
+
+        // ================= HOT-RELOAD CHECK (before command exec) =================
+        if (isCmd) {
+            try { loadCommands(false); } catch (e) { console.error('Hot reload:', e.message); }
+        }
 
         // ================= ANTIDELETE: SAVE =================
         if (config.antidelete && msg.key?.id && !msg.key.fromMe) {
@@ -361,8 +419,7 @@ module.exports = async (conn, m, userId = "default") => {
         }
 
         // ================= COMMANDS =================
-        // handler is COMMAND-FREE by design.
-        // Commands live in /commands/*.js and are auto-loaded.
+        // Fully hot-reloaded. Drop a file in /commands → it works instantly.
         if (isCmd) {
             const handler = commandCache.get(command);
             if (handler && typeof handler.execute === 'function') {
@@ -376,10 +433,14 @@ module.exports = async (conn, m, userId = "default") => {
                     await conn.sendMessage(from, { text: fancy(`❌ Error: ${e.message}`) });
                 }
             }
-            // No fallback message — you add your own menu when ready.
+            // Silent if command not found — you add your own fallback later.
         }
 
     } catch (err) {
         console.error("Handler Error:", err.message);
     }
 };
+
+// ================= EXPOSE FOR MENU =================
+module.exports.getCommandCache = () => commandCache;
+module.exports.reloadCommands = () => loadCommands(true);
