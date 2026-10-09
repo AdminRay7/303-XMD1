@@ -2,224 +2,319 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>303-XMD v2 | Dashboard</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Dashboard | 303-XMD</title>
+<meta name="theme-color" content="#00d4ff">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔑</text></svg>">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/theme.css">
 </head>
 <body>
 
-<button class="menu-toggle" id="menuToggle" aria-label="Menu">
-    <i class="fas fa-bars"></i>
-</button>
-<div class="overlay" id="overlay"></div>
+<div id="appSidebarMount"></div>
 
-<div class="shell">
-
-    <!-- ================== SIDEBAR ================== -->
-    <aside class="sidebar" id="sidebar">
-        <div class="brand">
-            <div class="logo"><i class="fas fa-key"></i></div>
-            <div class="meta">
-                <h1>303-XMD</h1>
-                <p>v2 · The Last Key</p>
-            </div>
+<main class="app-content">
+    <div class="page-head">
+        <div>
+            <h2>Dashboard</h2>
+            <div class="sub">Pair · Manage · Chat</div>
         </div>
-
-        <div class="nav-label">Main</div>
-        <div class="nav-item active" data-page="home"><i class="fas fa-house"></i> Dashboard</div>
-        <div class="nav-item" data-page="pair"><i class="fas fa-link"></i> Pair Session</div>
-        <div class="nav-item" data-page="channel"><i class="fas fa-tower-broadcast"></i> Channel Control</div>
-
-        <div class="nav-label">System</div>
-        <div class="nav-item" data-page="stats"><i class="fas fa-chart-simple"></i> Statistics</div>
-        <div class="nav-item" data-page="about"><i class="fas fa-circle-info"></i> About</div>
-
-        <div class="sidebar-footer">
-            Developed by<br>
-            <a href="https://wa.me/254794376595" target="_blank">MR PRESENTER</a>
-            <br>© 2025
+        <div class="status-pill off" id="statusPill">
+            <span class="dot"></span>
+            <span id="statusText">Checking…</span>
         </div>
-    </aside>
+    </div>
 
-    <!-- ================== MAIN ================== -->
-    <main class="main">
+    <div class="stats">
+        <div class="stat"><div class="l">Credits</div><div class="v" id="credits">0</div></div>
+        <div class="stat"><div class="l">Sessions</div><div class="v" id="sessionCount">0</div></div>
+        <div class="stat"><div class="l">Max Slots</div><div class="v" id="maxSessions">3</div></div>
+        <div class="stat"><div class="l">Uptime</div><div class="v" id="uptime">0s</div></div>
+    </div>
 
-        <!-- HOME -->
-        <section class="page active" id="page-home">
-            <div class="panel">
-                <div class="hero">
-                    <div class="big-logo"><i class="fas fa-key"></i></div>
-                    <h1>303-XMD</h1>
-                    <p>The Last Key · Advanced WhatsApp Bot</p>
-                    <div class="cta">
-                        <button data-goto="pair"><i class="fas fa-link"></i> Pair Now</button>
-                        <button class="ghost" data-goto="channel"><i class="fas fa-tower-broadcast"></i> Channel</button>
-                    </div>
-                </div>
+    <div class="tab-bar" id="dashTabs">
+        <button class="tab-btn active" data-tab="pair"><i class="fas fa-link"></i> Pair</button>
+        <button class="tab-btn" data-tab="sessions"><i class="fas fa-server"></i> Sessions</button>
+        <button class="tab-btn" data-tab="chats"><i class="fas fa-comments"></i> Chats</button>
+    </div>
 
-                <div class="stat-grid">
-                    <div class="stat-card"><div class="num" id="homeSessions">0</div><div class="lbl">Sessions</div></div>
-                    <div class="stat-card"><div class="num" id="homeActive">0</div><div class="lbl">Active</div></div>
-                    <div class="stat-card"><div class="num" id="homeUptime">0s</div><div class="lbl">Uptime</div></div>
-                    <div class="stat-card"><div class="num" id="homeVersion">2.0.0</div><div class="lbl">Version</div></div>
-                </div>
-
-                <div style="margin-top:26px">
-                    <h3 style="font-size:13px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin-bottom:12px">Features</h3>
-                    <div class="feature-grid">
-                        <div class="feature">
-                            <div class="ic"><i class="fas fa-robot"></i></div>
-                            <h4>Command Engine</h4>
-                            <p>Hot-reload commands — drop a file, it works instantly.</p>
-                        </div>
-                        <div class="feature">
-                            <div class="ic"><i class="fas fa-tower-broadcast"></i></div>
-                            <h4>Newsletter Bot</h4>
-                            <p>Auto-react, log, and forward posts from your channel.</p>
-                        </div>
-                        <div class="feature">
-                            <div class="ic"><i class="fas fa-shield-halved"></i></div>
-                            <h4>Security Suite</h4>
-                            <p>Antidelete, antibug, antispam, anticall, and more.</p>
-                        </div>
-                        <div class="feature">
-                            <div class="ic"><i class="fas fa-server"></i></div>
-                            <h4>Multi-Session</h4>
-                            <p>Up to 12 WhatsApp accounts on a single deploy.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- PAIR -->
-        <section class="page" id="page-pair">
-            <div class="page-head">
+    <!-- ============ PAIR TAB ============ -->
+    <section class="tab-pane active" id="pane-pair">
+        <div class="card">
+            <div class="card-head">
+                <div class="card-head-icon"><i class="fas fa-link"></i></div>
                 <div>
-                    <h2>Pair Session</h2>
-                    <div class="sub">Link a WhatsApp device via pairing code</div>
-                </div>
-                <div class="status-pill off" id="pairStatus"><span class="dot"></span> <span id="pairStatusTxt">Checking…</span></div>
-            </div>
-
-            <div class="panel">
-                <div class="panel-head">
-                    <div class="icon"><i class="fas fa-link"></i></div>
-                    <div><h3>Generate Pairing Code</h3><p>Enter number with country code</p></div>
-                </div>
-
-                <div id="step-pair">
-                    <label class="fld">WhatsApp Number</label>
-                    <input type="tel" id="phoneNum" class="center" placeholder="254712345678" inputmode="numeric" maxlength="15">
-                    <button id="submitBtn" class="wide" style="margin-top:8px"><i class="fas fa-key"></i> Generate Pairing Code</button>
-                    <div class="error-box" id="err"></div>
-                </div>
-
-                <div id="step-result" style="display:none">
-                    <p style="color:var(--ok);font-size:12px;text-align:center;font-weight:700;letter-spacing:2px"><i class="fas fa-check-circle"></i> CODE READY</p>
-                    <div class="code-box" id="codeDisplay">----</div>
-                    <div class="instructions">
-                        <b>HOW TO PAIR:</b><br>
-                        1. Open WhatsApp on your phone.<br>
-                        2. Go to <b>Linked Devices</b>.<br>
-                        3. Tap <b>Link with Phone Number</b>.<br>
-                        4. Enter the 8-digit code above.
-                    </div>
-                    <div class="btn-row">
-                        <button id="copyBtn"><i class="fas fa-copy"></i> Copy</button>
-                        <button class="ghost" id="againBtn"><i class="fas fa-redo"></i> Again</button>
-                    </div>
+                    <h3>Generate Pairing Code</h3>
+                    <p>Enter your WhatsApp number with country code</p>
                 </div>
             </div>
-        </section>
 
-        <!-- CHANNEL -->
-        <section class="page" id="page-channel">
-            <div class="page-head">
-                <div>
-                    <h2>Channel Control</h2>
-                    <div class="sub">Publish posts & monitor your newsletter</div>
-                </div>
-                <div class="status-pill off" id="chStatus"><span class="dot"></span> <span id="chRole">Checking…</span></div>
+            <div id="pairStep1">
+                <label class="field-label">WhatsApp Number</label>
+                <input class="input center" type="tel" id="phoneNum" placeholder="254712345678" inputmode="numeric" maxlength="15">
+                <button class="btn btn-primary btn-block" id="submitBtn">
+                    <i class="fas fa-key"></i> Generate Pairing Code
+                </button>
+                <div class="error" id="pairErr"></div>
             </div>
 
-            <div class="panel">
-                <div class="panel-head">
-                    <div class="icon"><i class="fas fa-paper-plane"></i></div>
-                    <div><h3>Publish a Post</h3><p>Sends directly to your channel</p></div>
-                </div>
-                <label class="fld">Message</label>
-                <textarea id="chText" placeholder="Write your announcement…"></textarea>
-                <div class="btn-row" style="margin-top:10px">
-                    <button id="chPostBtn"><i class="fas fa-paper-plane"></i> Publish</button>
-                    <button class="ghost" id="chRefreshBtn"><i class="fas fa-rotate"></i> Refresh</button>
-                </div>
-                <div id="chErr" class="error-box"></div>
-                <div id="chOk" class="ok-box"></div>
-            </div>
-
-            <div class="panel">
-                <div class="panel-head">
-                    <div class="icon"><i class="fas fa-clock-rotate-left"></i></div>
-                    <div><h3>Recent Posts</h3><p>Last 10 posts from your channel</p></div>
-                </div>
-                <div id="chPosts" style="font-size:13px;color:#9bbccf"><i>Loading…</i></div>
-            </div>
-        </section>
-
-        <!-- STATS -->
-        <section class="page" id="page-stats">
-            <div class="page-head">
-                <div>
-                    <h2>Statistics</h2>
-                    <div class="sub">Live system metrics</div>
-                </div>
-            </div>
-            <div class="panel">
-                <div class="stat-grid">
-                    <div class="stat-card"><div class="num" id="statTotal">0</div><div class="lbl">Total Sessions</div></div>
-                    <div class="stat-card"><div class="num" id="statActive">0</div><div class="lbl">Active</div></div>
-                    <div class="stat-card"><div class="num" id="statMax">12</div><div class="lbl">Max Slots</div></div>
-                    <div class="stat-card"><div class="num" id="statUptime">0s</div><div class="lbl">Uptime</div></div>
-                </div>
-                <button class="ghost" style="margin-top:18px" id="refreshStatsBtn"><i class="fas fa-rotate"></i> Refresh Stats</button>
-            </div>
-        </section>
-
-        <!-- ABOUT -->
-        <section class="page" id="page-about">
-            <div class="page-head">
-                <div>
-                    <h2>About</h2>
-                    <div class="sub">Project information</div>
-                </div>
-            </div>
-            <div class="panel">
-                <div class="panel-head">
-                    <div class="icon"><i class="fas fa-key"></i></div>
-                    <div><h3>303-XMD</h3><p>The Last Key</p></div>
-                </div>
-                <p style="font-size:13px;color:#9bbccf;line-height:1.7;margin-bottom:16px">
-                    An advanced multi-session WhatsApp bot built on Baileys, featuring hot-reload
-                    commands, newsletter automation, and a modern web dashboard.
+            <div id="pairStep2" style="display:none">
+                <p style="color:var(--ok);text-align:center;font-size:12px;letter-spacing:2px;font-weight:700">
+                    <i class="fas fa-check-circle"></i> CODE READY
                 </p>
-                <div class="instructions">
-                    <b>STACK</b><br>
-                    Node.js · Baileys 6.7.9 · MongoDB · Express<br><br>
-                    <b>AUTHOR</b><br>
-                    <a href="https://wa.me/254794376595">Mr Presenter</a><br><br>
-                    <b>VERSION</b><br>
-                    2.0.0
+                <div class="code-box" id="codeDisplay">----</div>
+                <div style="background:rgba(255,255,255,.03);border-left:3px solid var(--g1);padding:14px 16px;border-radius:10px;font-size:13px;color:#b8c4cf;line-height:1.75">
+                    <b style="color:var(--g1)">HOW TO PAIR:</b><br>
+                    1. Open WhatsApp on your phone.<br>
+                    2. Go to <b>Linked Devices</b>.<br>
+                    3. Tap <b>Link with Phone Number</b>.<br>
+                    4. Enter the 8-digit code above.
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" id="copyBtn"><i class="fas fa-copy"></i> Copy</button>
+                    <button class="btn btn-ghost" id="againBtn"><i class="fas fa-redo"></i> Again</button>
                 </div>
             </div>
-        </section>
+        </div>
+    </section>
 
-    </main>
-</div>
+    <!-- ============ SESSIONS TAB ============ -->
+    <section class="tab-pane" id="pane-sessions">
+        <div class="card">
+            <div class="card-head">
+                <div class="card-head-icon"><i class="fas fa-server"></i></div>
+                <div><h3>My Sessions</h3><p>Your paired WhatsApp numbers</p></div>
+            </div>
+            <div id="sessionsList">
+                <div class="empty"><i class="fas fa-spinner fa-spin"></i>Loading…</div>
+            </div>
+            <button class="btn btn-ghost btn-block" id="refreshSessionsBtn" style="margin-top:14px">
+                <i class="fas fa-rotate"></i> Refresh
+            </button>
+        </div>
+    </section>
+
+    <!-- ============ CHATS TAB ============ -->
+    <section class="tab-pane" id="pane-chats">
+        <div class="card">
+            <div class="card-head">
+                <div class="card-head-icon"><i class="fas fa-comments"></i></div>
+                <div><h3>Chat Viewer</h3><p>Browse and reply to conversations</p></div>
+            </div>
+            <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
+                The chat viewer opens in a dedicated page with full WhatsApp-style layout,
+                contact drawer, media, and reply support.
+            </p>
+            <a href="/web" class="btn btn-primary btn-block"><i class="fas fa-comments"></i> Open Web Chat</a>
+        </div>
+    </section>
+</main>
 
 <div class="toast" id="toast"></div>
 
-<script src="/app.js"></script>
+<script src="/sidebar.js"></script>
+<script>
+// ============================================
+//   AUTH
+// ============================================
+const token = localStorage.getItem('token');
+const user = JSON.parse(localStorage.getItem('user') || '{}');
+if (!token) location.href = '/login';
+
+document.getElementById('credits').textContent     = user.credits || 0;
+document.getElementById('maxSessions').textContent = user.maxSessions || 3;
+
+// ============================================
+//   TOAST
+// ============================================
+const toastEl = document.getElementById('toast');
+function showToast(msg, err = false) {
+    toastEl.textContent = msg;
+    toastEl.classList.toggle('err', err);
+    toastEl.classList.add('show');
+    setTimeout(() => toastEl.classList.remove('show'), 2400);
+}
+
+// ============================================
+//   INNER TABS
+// ============================================
+document.querySelectorAll('#dashTabs .tab-btn').forEach(btn => {
+    btn.onclick = () => {
+        const tab = btn.dataset.tab;
+        document.querySelectorAll('#dashTabs .tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+        document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+        document.getElementById('pane-' + tab).classList.add('active');
+        if (tab === 'sessions') loadSessions();
+    };
+});
+
+// ============================================
+//   PAIRING
+// ============================================
+function freshSessionId() {
+    return 'sess_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+
+const submitBtn  = document.getElementById('submitBtn');
+const phoneNum   = document.getElementById('phoneNum');
+const step1      = document.getElementById('pairStep1');
+const step2      = document.getElementById('pairStep2');
+const codeBox    = document.getElementById('codeDisplay');
+const errBox     = document.getElementById('pairErr');
+const copyBtn    = document.getElementById('copyBtn');
+const againBtn   = document.getElementById('againBtn');
+
+submitBtn.onclick = async () => {
+    errBox.classList.remove('show');
+    const num = phoneNum.value.replace(/\D/g, '');
+    if (num.length < 10 || num.length > 15) {
+        errBox.innerText = 'Enter full number with country code (10–15 digits)';
+        errBox.classList.add('show');
+        return;
+    }
+
+    const sessionId = freshSessionId();
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="skeleton"></span> Generating…';
+
+    try {
+        const r = await fetch(`/api/pair?sessionId=${encodeURIComponent(sessionId)}&num=${encodeURIComponent(num)}`, {
+            cache: 'no-store',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await r.json();
+        if (!r.ok || data.error) throw new Error(data.error || 'Pairing failed');
+        if (!data.code) throw new Error('No pairing code returned');
+
+        step1.style.display = 'none';
+        step2.style.display = 'block';
+        codeBox.innerText = data.code;
+        showToast('Code generated!');
+    } catch (e) {
+        errBox.innerText = e.message;
+        errBox.classList.add('show');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fas fa-key"></i> Generate Pairing Code';
+    }
+};
+
+function copyCode() {
+    const code = codeBox.innerText.replace(/-/g, '').trim();
+    if (!code || code === '----') return;
+    navigator.clipboard.writeText(code).then(() => showToast('Copied!')).catch(() => {});
+}
+codeBox.onclick = copyCode;
+copyBtn.onclick = copyCode;
+
+againBtn.onclick = () => {
+    step2.style.display = 'none';
+    step1.style.display = 'block';
+    phoneNum.value = '';
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = '<i class="fas fa-key"></i> Generate Pairing Code';
+    errBox.classList.remove('show');
+    phoneNum.focus();
+};
+
+phoneNum.addEventListener('keydown', e => { if (e.key === 'Enter') submitBtn.click(); });
+
+// ============================================
+//   SESSIONS
+// ============================================
+async function loadSessions() {
+    const list = document.getElementById('sessionsList');
+    list.innerHTML = '<div class="empty"><i class="fas fa-spinner fa-spin"></i>Loading…</div>';
+    try {
+        const r = await fetch('/api/user/sessions', { headers: { 'Authorization': 'Bearer ' + token } });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed');
+
+        document.getElementById('sessionCount').textContent = d.sessions?.length || 0;
+
+        if (!d.sessions?.length) {
+            list.innerHTML = '<div class="empty"><i class="fas fa-server"></i>No sessions yet — pair one first</div>';
+            return;
+        }
+
+        list.innerHTML = d.sessions.map(s => {
+            const status = s.connected ? 'Online' : (s.ready ? 'Connecting' : 'Offline');
+            const color = s.connected ? 'var(--ok)' : (s.ready ? '#ffcc66' : 'var(--danger)');
+            return `
+                <div class="card" style="margin-bottom:12px;padding:16px 18px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+                        <div style="min-width:0;flex:1">
+                            <div style="color:#fff;font-weight:700;font-size:14px;word-break:break-all">📱 +${escapeHtml(s.phone || s.sessionId)}</div>
+                            <div style="color:var(--muted);font-size:11px;margin-top:4px">
+                                ${s.messageCount || 0} messages · ID: ${escapeHtml((s.sessionId || '').slice(0, 18))}…
+                            </div>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <span style="font-size:10px;font-weight:700;padding:4px 10px;border-radius:20px;background:rgba(255,255,255,.05);color:${color};border:1px solid ${color}">● ${status}</span>
+                            <button class="btn btn-ghost btn-sm" data-act="delete" data-id="${escapeAttr(s.sessionId)}"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        list.innerHTML = `<div class="empty">❌ ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+document.getElementById('refreshSessionsBtn').onclick = loadSessions;
+
+document.getElementById('sessionsList').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-act="delete"]');
+    if (!btn) return;
+    if (!confirm('Remove this session? The WhatsApp will be unlinked.')) return;
+    try {
+        const r = await fetch(`/api/user/sessions/${encodeURIComponent(btn.dataset.id)}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error);
+        showToast('Session removed');
+        loadSessions();
+    } catch (err) {
+        showToast(err.message, true);
+    }
+});
+
+// ============================================
+//   STATUS
+// ============================================
+async function checkStatus() {
+    try {
+        const r = await fetch('/api/status', { cache: 'no-store' });
+        const s = await r.json();
+        const pill = document.getElementById('statusPill');
+        const text = document.getElementById('statusText');
+        if (s.connected || s.ready) {
+            pill.classList.remove('off');
+            text.textContent = 'Online';
+        } else {
+            pill.classList.add('off');
+            text.textContent = 'Ready to pair';
+        }
+    } catch {
+        document.getElementById('statusText').textContent = 'Offline';
+    }
+}
+
+// ============================================
+//   HELPERS
+// ============================================
+function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+}
+function escapeAttr(s) { return String(s || '').replace(/"/g, '&quot;'); }
+
+checkStatus();
+setInterval(checkStatus, 20000);
+</script>
 </body>
 </html>
