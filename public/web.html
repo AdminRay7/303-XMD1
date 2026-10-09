@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Web Chat | 303-XMD</title>
+<meta name="theme-color" content="#00a884">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="303-XMD">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/web.css">
+</head>
+<body class="theme-web">
+
+<div id="appSidebarMount"></div>
+
+<div class="wa-header">
+    <div class="avatar">💬</div>
+    <div class="info">
+        <div class="title">Web Chat</div>
+        <div class="subtitle">
+            <span class="live-dot off" id="statusDot"></span>
+            <span id="statusText">Connecting…</span>
+        </div>
+    </div>
+    <div class="actions">
+        <button id="refreshBtn" title="Refresh"><i class="fas fa-rotate"></i></button>
+        <button id="clearBtn" title="Clear feed"><i class="fas fa-trash"></i></button>
+    </div>
+</div>
+
+<div class="wa-layout" id="waLayout">
+    <aside class="sidebar">
+        <div class="sidebar-toolbar">
+            <select id="sessionFilter">
+                <option value="">All sessions</option>
+            </select>
+        </div>
+        <div class="sidebar-search">
+            <i class="fas fa-search"></i>
+            <input type="text" id="searchInput" placeholder="Search chats or messages…" autocomplete="off">
+        </div>
+        <div class="chat-list" id="chatList">
+            <div class="sidebar-empty">
+                <i class="fas fa-comments"></i>
+                No chats yet
+            </div>
+        </div>
+    </aside>
+
+    <main class="chat-pane">
+        <header class="chat-header" id="chatHeader" style="display:none">
+            <button class="back-btn" id="backBtn" title="Back"><i class="fas fa-arrow-left"></i></button>
+            <div class="ch-avatar" id="chatAvatar">💬</div>
+            <div class="ch-info" id="chatInfoBtn">
+                <div class="ch-name" id="chatName">—</div>
+                <div class="ch-sub" id="chatSub">—</div>
+            </div>
+            <div class="ch-actions">
+                <button id="inChatSearchBtn" title="Search in chat"><i class="fas fa-magnifying-glass"></i></button>
+                <button id="infoBtn" title="Chat info"><i class="fas fa-circle-info"></i></button>
+            </div>
+        </header>
+
+        <div class="chat" id="chat">
+            <div class="no-chat">
+                <i class="fas fa-comments"></i>
+                <h3>303-XMD Web Chat</h3>
+                <p>Select a chat from the list to see messages in real time and send replies.</p>
+            </div>
+        </div>
+
+        <div class="composer-wrap" id="composerWrap" style="display:none">
+            <div class="reply-banner" id="replyBanner">
+                <div class="rb-body">
+                    <span class="rb-who" id="rbWho">Replying</span>
+                    <span class="rb-text" id="rbText"></span>
+                </div>
+                <button class="rb-close" id="rbClose"><i class="fas fa-xmark"></i></button>
+            </div>
+            <div class="composer">
+                <textarea id="messageInput" placeholder="Type a message…" rows="1"></textarea>
+                <button class="send-btn" id="sendBtn" disabled title="Send">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+            <div class="composer-hint">Press Enter to send · Shift+Enter for new line</div>
+        </div>
+    </main>
+</div>
+
+<button class="scroll-btn" id="scrollBtn" title="Scroll to bottom">
+    <i class="fas fa-arrow-down"></i>
+</button>
+
+<div class="drawer-backdrop" id="drawerBackdrop"></div>
+<aside class="drawer" id="drawer">
+    <div class="drawer-head">
+        <button id="drawerClose"><i class="fas fa-xmark"></i></button>
+        <div class="dh-title">Chat info</div>
+    </div>
+    <div class="drawer-body" id="drawerBody">
+        <div class="drawer-avatar" id="drawerAvatar">💬</div>
+        <div class="drawer-name" id="drawerName">—</div>
+        <div class="drawer-sub" id="drawerSub">—</div>
+        <div class="drawer-stats">
+            <div class="drawer-stat"><div class="ds-num" id="dsTotal">0</div><div class="ds-label">Total</div></div>
+            <div class="drawer-stat"><div class="ds-num" id="dsSent">0</div><div class="ds-label">Sent</div></div>
+            <div class="drawer-stat"><div class="ds-num" id="dsRecv">0</div><div class="ds-label">Recv</div></div>
+        </div>
+        <div class="drawer-section">
+            <h4>Identity</h4>
+            <div class="drawer-row"><span class="label">JID type</span><span class="value" id="dJidType">—</span></div>
+            <div class="drawer-row"><span class="label">Chat JID</span><span class="value" id="dChatJid">—</span></div>
+            <div class="drawer-row"><span class="label">Phone</span><span class="value green" id="dPhone">—</span></div>
+            <div class="drawer-row"><span class="label">LID</span><span class="value yellow" id="dLid">—</span></div>
+            <div class="drawer-row"><span class="label">Resolved via</span><span class="value blue" id="dResolve">—</span></div>
+        </div>
+        <div class="drawer-section">
+            <h4>Session</h4>
+            <div class="drawer-row"><span class="label">Session ID</span><span class="value" id="dSession">—</span></div>
+            <div class="drawer-row"><span class="label">First seen</span><span class="value" id="dFirst">—</span></div>
+            <div class="drawer-row"><span class="label">Last seen</span><span class="value" id="dLast">—</span></div>
+        </div>
+    </div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script src="/sidebar.js"></script>
+<script src="/web.js"></script>
+</body>
+</html>
