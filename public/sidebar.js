@@ -1,49 +1,39 @@
 // ============================================================
 //   303-XMD — Global App Sidebar + Theme Auto-Loader
-//
-//   Usage in any logged-in page:
-//     <div id="appSidebarMount"></div>
-//     ...
-//     <script src="/sidebar.js"></script>
-//
-//   The script:
-//     • Detects the current page from the URL
-//     • Sets <body class="theme-X"> so the whole page inherits
-//       the gradient palette
-//     • Injects the sidebar navigation
-//     • Shows/hides admin items based on localStorage.user.isAdmin
-//     • Handles mobile drawer + logout
+//   Admin is detected strictly by email.
 // ============================================================
 (function () {
+    const ADMIN_EMAIL = 'ryanobanga243@gmail.com';
+
     const path = location.pathname.toLowerCase().replace(/\/$/, '') || '/';
     const file = (path.split('/').pop() || 'index').replace('.html', '');
     const name = file || 'index';
 
     // Public pages — no sidebar, no forced theme
-    const PUBLIC = ['', 'index', 'login', 'register', 'app'];
+    const PUBLIC = ['', 'index', 'login', 'register', 'app', 'mobile'];
     if (PUBLIC.includes(name)) return;
 
     // ---- THEME MAPPING ----
     const THEMES = {
-        dashboard:    'theme-dashboard',
-        pair:         'theme-pair',
-        channel:      'theme-channel',
-        live:         'theme-live',
-        web:          'theme-web',
-        settings:     'theme-settings',
-        admin:        'theme-admin',
-        'api-docs':   'theme-api',
-        'api-dics':   'theme-api'
+        dashboard:  'theme-dashboard',
+        pair:       'theme-pair',
+        channel:    'theme-channel',
+        live:       'theme-live',
+        web:        'theme-web',
+        settings:   'theme-settings',
+        profile:    'theme-profile',
+        admin:      'theme-admin',
+        'api-docs': 'theme-api',
+        'api-dics': 'theme-api'
     };
-    const themeClass = THEMES[name] || 'theme-dashboard';
-    document.body.classList.add(themeClass);
+    document.body.classList.add(THEMES[name] || 'theme-dashboard');
     document.documentElement.style.background = '#000';
 
-    // ---- USER ----
+    // ---- USER + EMAIL-BASED ADMIN CHECK ----
     let user = {};
     try { user = JSON.parse(localStorage.getItem('user') || '{}'); } catch {}
-    const isAdmin = user.isAdmin === true;
-    const email   = user.email || user.name || 'user';
+    const email = (user.email || user.name || '').trim().toLowerCase();
+    const isAdmin = email === ADMIN_EMAIL.toLowerCase();
     const initial = (email.charAt(0) || 'U').toUpperCase();
 
     // ---- NAV ITEMS ----
@@ -55,6 +45,7 @@
         { id: 'web',       href: '/web',       icon: 'fa-comments',        label: 'Web Chat' },
 
         { sec: 'Account' },
+        { id: 'profile',   href: '/profile',   icon: 'fa-user',            label: 'My Profile' },
         { id: 'live',      href: '/live',      icon: 'fa-satellite-dish',  label: 'Live Monitor' },
         { id: 'settings',  href: '/settings',  icon: 'fa-gear',            label: 'Settings' },
 
@@ -72,7 +63,7 @@
         }
         if (item.admin && !isAdmin) continue;
         const isActive = item.id === name
-            || (item.id === 'api-docs' && (name === 'api-dics'));
+            || (item.id === 'api-docs' && name === 'api-dics');
         navHtml += `<a href="${item.href}" class="app-nav-item${isActive ? ' active' : ''}">
             <i class="fas ${item.icon}"></i>
             <span>${item.label}</span>
@@ -90,13 +81,13 @@
             </div>
             <nav class="app-nav">${navHtml}</nav>
             <div class="app-foot">
-                <div class="app-user">
+                <a href="/profile" class="app-user" style="text-decoration:none;color:inherit">
                     <div class="app-user-avatar">${initial}</div>
                     <div class="app-user-info">
-                        <div class="app-user-email">${escapeHtml(email)}</div>
+                        <div class="app-user-email">${escapeHtml(email || 'guest')}</div>
                         <div class="app-user-role">${isAdmin ? 'Administrator' : 'User'}</div>
                     </div>
-                </div>
+                </a>
                 <button class="app-logout" id="appLogoutBtn">
                     <i class="fas fa-right-from-bracket"></i> Logout
                 </button>
@@ -116,11 +107,8 @@
 
     function inject() {
         const mount = document.getElementById('appSidebarMount');
-        if (mount) {
-            mount.outerHTML = sidebarHtml;
-        } else {
-            document.body.insertAdjacentHTML('afterbegin', sidebarHtml);
-        }
+        if (mount) mount.outerHTML = sidebarHtml;
+        else document.body.insertAdjacentHTML('afterbegin', sidebarHtml);
 
         const sidebar = document.getElementById('appSidebar');
         const toggle  = document.getElementById('sidebarToggle');
@@ -135,7 +123,8 @@
             sidebar.classList.remove('open');
             overlay.classList.remove('show');
         });
-        logout?.addEventListener('click', () => {
+        logout?.addEventListener('click', (e) => {
+            e.preventDefault();
             if (!confirm('Log out of 303-XMD?')) return;
             localStorage.removeItem('token');
             localStorage.removeItem('user');
