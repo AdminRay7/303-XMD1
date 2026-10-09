@@ -56,6 +56,7 @@ body::before{
     top:0;
     height:100vh;
     overflow-y:auto;
+    z-index:20;
 }
 .brand{
     display:flex;align-items:center;gap:12px;
@@ -324,15 +325,22 @@ button.wide{width:100%}
 /* ================== MOBILE ================== */
 .menu-toggle{
     display:none;
-    position:fixed;top:16px;left:16px;z-index:60;
+    position:fixed;top:16px;left:16px;
+    z-index:80;
     background:linear-gradient(135deg,var(--cyan),var(--purple));
     border:none;width:44px;height:44px;border-radius:12px;
     color:#000;font-size:18px;cursor:pointer;
     box-shadow:0 0 20px rgba(0,229,255,.4);
+    align-items:center;justify-content:center;
 }
+
+/* Overlay — NO blur, just a soft dim */
 .overlay{
-    display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);
-    z-index:40;backdrop-filter:blur(4px);
+    display:none;
+    position:fixed;inset:0;
+    background:rgba(0,0,0,.45);
+    z-index:40;
+    transition:opacity .25s;
 }
 .overlay.show{display:block}
 
@@ -340,10 +348,12 @@ button.wide{width:100%}
     .shell{grid-template-columns:1fr}
     .sidebar{
         position:fixed;left:-280px;top:0;bottom:0;width:260px;
-        transition:left .3s;z-index:50;
+        transition:left .3s;
+        z-index:70;              /* ABOVE overlay */
+        height:100vh;
     }
     .sidebar.open{left:0}
-    .menu-toggle{display:flex;align-items:center;justify-content:center}
+    .menu-toggle{display:flex}
     .main{padding:70px 20px 60px}
     .page-head h2{font-size:18px}
     .hero h1{font-size:22px;letter-spacing:4px}
@@ -586,10 +596,28 @@ function go(pageId) {
     if (pageId === 'stats')   { loadStats(); }
     if (pageId === 'home')    { loadStats(); }
 }
+
+// Nav clicks
 navItems.forEach(n => n.onclick = () => go(n.dataset.page));
 
-menuBtn.onclick = () => { sidebar.classList.toggle('open'); overlay.classList.toggle('show'); };
-overlay.onclick = () => { sidebar.classList.remove('open'); overlay.classList.remove('show'); };
+// Hamburger
+menuBtn.onclick = (e) => {
+    e.stopPropagation();
+    sidebar.classList.toggle('open');
+    overlay.classList.toggle('show');
+};
+
+// Overlay tap → close
+overlay.onclick = () => {
+    sidebar.classList.remove('open');
+    overlay.classList.remove('show');
+};
+
+// Safety: any nav tap closes sidebar
+navItems.forEach(n => n.addEventListener('click', () => {
+    sidebar.classList.remove('open');
+    overlay.classList.remove('show');
+}));
 
 // ================== SESSION ==================
 function getSessionId() {
