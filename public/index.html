@@ -2,33 +2,82 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>303-XMD v2 | The Last Key</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>303-XMD — The Last Key</title>
+<meta name="theme-color" content="#0a0000">
+<meta name="description" content="303-XMD — WhatsApp automation bot with pairing panel and session management.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔑</text></svg>">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/theme.css">
 </head>
-<body class="landing-body">
+<body class="theme-landing landing-body">
 
-<div class="landing">
-    <div class="landing-card">
-        <div class="big-logo"><i class="fas fa-key"></i></div>
-        <h1 class="landing-title">303-XMD</h1>
-        <p class="landing-sub">The Last Key · Advanced WhatsApp Bot</p>
-
-        <div class="landing-actions">
-            <a href="/dashboard.html" class="btn-primary"><i class="fas fa-gauge-high"></i> Open Dashboard</a>
-            <a href="https://wa.me/254794376595" target="_blank" class="btn-ghost"><i class="fab fa-whatsapp"></i> Contact Owner</a>
+<div class="landing-wrap">
+    <nav class="landing-nav">
+        <div class="landing-nav-brand"><i class="fas fa-key"></i> 303-XMD</div>
+        <div class="landing-nav-links">
+            <a href="#features">Features</a>
+            <a href="#how">How</a>
+            <a href="#deploy">Deploy</a>
+            <a href="/login" class="btn btn-ghost">Login</a>
+            <a href="/register" class="btn btn-primary">Get Started</a>
         </div>
+    </nav>
 
-        <div class="landing-info">
-            <div><strong>v2.0.0</strong><span>Version</span></div>
-            <div><strong>Baileys</strong><span>Engine</span></div>
-            <div><strong>MongoDB</strong><span>Session Store</span></div>
+    <section class="hero">
+        <div class="hero-logo"><i class="fas fa-key"></i></div>
+        <h1>303-XMD</h1>
+        <div class="tagline">The Last Key</div>
+        <p class="lead">
+            A fast, private WhatsApp automation bot with pairing panel, session management,
+            and a full command suite. Built for users who want control.
+        </p>
+        <div class="hero-actions">
+            <a href="/register" class="btn btn-primary"><i class="fas fa-rocket"></i> Get Started Free</a>
+            <a href="/login" class="btn btn-ghost"><i class="fas fa-right-to-bracket"></i> Login</a>
         </div>
-    </div>
+    </section>
+
+    <section id="features">
+        <div class="section-head">
+            <h2>Features</h2>
+            <p>Everything you need in one bot</p>
+        </div>
+        <div class="feature-grid">
+            <div class="feature-card"><i class="fas fa-link"></i><h3>Easy Pairing</h3><p>Pair any WhatsApp number with a simple 8-digit code. No QR required.</p></div>
+            <div class="feature-card"><i class="fas fa-shield-halved"></i><h3>Security</h3><p>Antidelete, antibug, antispam, antilink — full protection suite.</p></div>
+            <div class="feature-card"><i class="fas fa-download"></i><h3>Media Tools</h3><p>Download songs, stickers, view-once reveal, and more.</p></div>
+            <div class="feature-card"><i class="fas fa-users"></i><h3>Group Admin</h3><p>Promote, demote, kick, warn, tag all — full group control.</p></div>
+            <div class="feature-card"><i class="fas fa-key"></i><h3>Multi-Session</h3><p>Run multiple WhatsApp accounts from a single deployment.</p></div>
+            <div class="feature-card"><i class="fas fa-bolt"></i><h3>Fast & Light</h3><p>Built on Baileys for speed. Runs on small servers.</p></div>
+        </div>
+    </section>
+
+    <section id="how">
+        <div class="section-head">
+            <h2>How it works</h2>
+            <p>Four steps to go live</p>
+        </div>
+        <div class="feature-grid">
+            <div class="feature-card"><i class="fas fa-1"></i><h3>Create account</h3><p>Sign up with your email. Free, takes 10 seconds.</p></div>
+            <div class="feature-card"><i class="fas fa-2"></i><h3>Get a code</h3><p>Enter your WhatsApp number on the dashboard.</p></div>
+            <div class="feature-card"><i class="fas fa-3"></i><h3>Link & go live</h3><p>Enter the code in WhatsApp → Linked Devices.</p></div>
+            <div class="feature-card"><i class="fas fa-4"></i><h3>Manage sessions</h3><p>Reconnect, disconnect, and manage from the dashboard.</p></div>
+        </div>
+    </section>
+
+    <section id="deploy" style="text-align:center;margin-bottom:60px">
+        <div class="section-head">
+            <h2>Deploy your own</h2>
+            <p>Clone the repo and run it anywhere</p>
+        </div>
+        <a href="https://github.com/AdminRay7/303-XMD1" target="_blank" class="btn btn-primary">
+            <i class="fas fa-rocket"></i> View on GitHub
+        </a>
+    </section>
 
     <div class="landing-footer">
-        Developed by <a href="https://wa.me/254794376595">MR PRESENTER</a> · © 2025
+        DEVELOPED BY <a href="https://wa.me/254794376595">MR PRESENTER</a> © 2025
     </div>
 </div>
 
