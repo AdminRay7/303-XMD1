@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Settings | 303-XMD</title>
+<meta name="theme-color" content="#ffb347">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙️</text></svg>">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/theme.css">
+</head>
+<body>
+
+<div id="appSidebarMount"></div>
+
+<main class="app-content">
+    <div class="page-head">
+        <div>
+            <h2>Settings</h2>
+            <div class="sub">Configure your bot per session</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head">
+            <div class="card-head-icon"><i class="fas fa-mobile-screen"></i></div>
+            <div>
+                <h3>Select Session</h3>
+                <p>Changes apply only to the selected number</p>
+            </div>
+        </div>
+        <select class="select" id="sessionPicker">
+            <option value="">Loading…</option>
+        </select>
+    </div>
+
+    <div id="settingsForm">
+
+        <div class="card">
+            <div class="card-head">
+                <div class="card-head-icon"><i class="fas fa-fingerprint"></i></div>
+                <div><h3>Identity</h3><p>Bot name and prefix</p></div>
+            </div>
+
+            <label class="field-label">Prefix</label>
+            <input class="input" type="text" id="set-prefix" maxlength="3" placeholder=".">
+
+            <label class="field-label">Bot Name</label>
+            <input class="input" type="text" id="set-botName" maxlength="30" placeholder="303-XMD">
+
+            <label class="field-label">Footer</label>
+            <input class="input" type="text" id="set-footer" maxlength="40" placeholder="© 303-XMD">
+
+            <label class="field-label">Work Mode</label>
+            <select class="select" id="set-workMode">
+                <option value="public">Public — anyone can use</option>
+                <option value="private">Private — owner only</option>
+            </select>
+        </div>
+
+        <div class="card">
+            <div class="card-head">
+                <div class="card-head-icon"><i class="fas fa-shield-halved"></i></div>
+                <div><h3>Protection</h3><p>Guard your chats</p></div>
+            </div>
+
+            <div class="row-toggle" data-setting="antibug">
+                <div><div class="name">Anti-Bug</div><div class="desc">Block crash messages</div></div>
+                <label class="toggle"><input type="checkbox" id="set-antibug"><span class="slider"></span></label>
+            </div>
+            <div class="row-toggle" data-setting="antispam">
+                <div><div class="name">Anti-Spam</div><div class="desc">Auto-remove spammers</div></div>
+                <label class="toggle"><input type="checkbox" id="set-antispam"><span class="slider"></span></label>
+            </div>
+            <div class="row-toggle" data-setting="antilink">
+                <div><div class="name">Anti-Link</div><div class="desc">Delete links in groups</div></div>
+                <label class="toggle"><input type="checkbox" id="set-antilink"><span class="slider"></span></label>
+            </div>
+            <div class="row-toggle" data-setting="antidelete">
+                <div><div class="name">Anti-Delete</div><div class="desc">Recover deleted messages</div></div>
+                <label class="toggle"><input type="checkbox" id="set-antidelete"><span class="slider"></span></label>
+            </div>
+            <div class="row-toggle" data-setting="anticall">
+                <div><div class="name">Anti-Call</div><div class="desc">Reject incoming calls</div></div>
+                <label class="toggle"><input type="checkbox" id="set-anticall"><span class="slider"></span></label>
+            </div>
+
+            <label class="field-label" style="margin-top:16px">Anti-Media</label>
+            <select class="select" id="set-antimedia">
+                <option value="off">Off</option>
+                <option value="all">All media</option>
+                <option value="photo">Photos only</option>
+                <option value="video">Videos only</option>
+                <option value="sticker">Stickers only</option>
+            </select>
+        </div>
+
+        <div class="card">
+            <div class="card-head">
+                <div class="card-head-icon"><i class="fas fa-bolt"></i></div>
+                <div><h3>Automation</h3><p>Auto-responses</p></div>
+            </div>
+
+            <div class="row-toggle" data-setting="autoRead">
+                <div><div class="name">Auto-Read</div><div class="desc">Mark incoming as read</div></div>
+                <label class="toggle"><input type="checkbox" id="set-autoRead"><span class="slider"></span></label>
+            </div>
+            <div class="row-toggle" data-setting="autoReact">
+                <div><div class="name">Auto-React</div><div class="desc">React to every message</div></div>
+                <label class="toggle"><input type="checkbox" id="set-autoReact"><span class="slider"></span></label>
+            </div>
+            <div class="row-toggle" data-setting="autoTyping">
+                <div><div class="name">Auto-Typing</div><div class="desc">Show "typing" indicator</div></div>
+                <label class="toggle"><input type="checkbox" id="set-autoTyping"><span class="slider"></span></label>
+            </div>
+        </div>
+
+        <div class="card">
+            <button class="btn btn-primary btn-block" id="saveBtn"><i class="fas fa-save"></i> Save All Changes</button>
+            <button class="btn btn-ghost btn-block" id="resetBtn" style="margin-top:10px"><i class="fas fa-undo"></i> Reset to Defaults</button>
+        </div>
+    </div>
+
+    <div class="empty" id="emptyState" style="display:none">
+        <i class="fas fa-mobile-screen"></i>
+        No sessions yet. <a href="/pair">Pair one first</a>.
+    </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<style>
+.row-toggle{
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:12px 0;border-bottom:1px solid var(--border);
+}
+.row-toggle:last-child{border-bottom:none}
+.row-toggle .name{color:var(--text);font-size:13px;font-weight:600}
+.row-toggle .desc{color:var(--muted);font-size:11px;margin-top:2px}
+.toggle{position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;cursor:pointer}
+.toggle input{opacity:0;width:0;height:0}
+.toggle .slider{
+    position:absolute;inset:0;background:rgba(255,255,255,.08);
+    border:1px solid var(--border);border-radius:24px;transition:.25s;
+}
+.toggle .slider::before{
+    content:'';position:absolute;width:16px;height:16px;left:3px;top:3px;
+    background:#888;border-radius:50%;transition:.25s;
+}
+.toggle input:checked + .slider{
+    background:linear-gradient(135deg,var(--g1),var(--g2));
+    border-color:transparent;
+}
+.toggle input:checked + .slider::before{
+    background:#000;transform:translateX(20px);box-shadow:0 0 10px var(--glow);
+}
+</style>
+
+<script src="/sidebar.js"></script>
+<script>
+const token = localStorage.getItem('token');
+if (!token) location.href = '/login';
+
+const toastEl = document.getElementById('toast');
+function showToast(msg, isErr = false) {
+    toastEl.textContent = msg;
+    toastEl.classList.toggle('err', isErr);
+    toastEl.classList.add('show');
+    setTimeout(() => toastEl.classList.remove('show'), 2400);
+}
+
+async function api(path, opts = {}) {
+    const r = await fetch(path, {
+        ...opts,
+        headers: {
+            'Authorization': 'Bearer ' + token,
+            ...(opts.body ? {'Content-Type': 'application/json'} : {}),
+            ...(opts.headers || {})
+        }
+    });
+    const text = await r.text();
+    let data; try { data = JSON.parse(text); } catch { data = {}; }
+    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    return data;
+}
+
+let currentSessionId = null;
+
+async function loadSessions() {
+    try {
+        const d = await api('/api/settings');
+        const picker = document.getElementById('sessionPicker');
+
+        if (!d.sessions?.length) {
+            document.getElementById('settingsForm').style.display = 'none';
+            document.getElementById('emptyState').style.display = 'block';
+            picker.parentElement.parentElement.style.display = 'none';
+            return;
+        }
+
+        picker.innerHTML = d.sessions.map(s =>
+            `<option value="${escapeAttr(s.sessionId)}">📱 +${escapeHtml(s.phone)}</option>`
+        ).join('');
+
+        currentSessionId = d.sessions[0].sessionId;
+        applySettingsToUI(d.sessions[0].settings);
+        picker.value = currentSessionId;
+    } catch (e) {
+        showToast(e.message, true);
+    }
+}
+
+function applySettingsToUI(s) {
+    document.getElementById('set-prefix').value = s.prefix ?? '.';
+    document.getElementById('set-botName').value = s.botName ?? '';
+    document.getElementById('set-footer').value = s.footer ?? '';
+    document.getElementById('set-workMode').value = s.workMode ?? 'public';
+    document.getElementById('set-antibug').checked = !!s.antibug;
+    document.getElementById('set-antispam').checked = !!s.antispam;
+    document.getElementById('set-antilink').checked = !!s.antilink;
+    document.getElementById('set-antidelete').checked = !!s.antidelete;
+    document.getElementById('set-anticall').checked = !!s.anticall;
+    document.getElementById('set-antimedia').value = s.antimedia ?? 'off';
+    document.getElementById('set-autoRead').checked = !!s.autoRead;
+    document.getElementById('set-autoReact').checked = !!s.autoReact;
+    document.getElementById('set-autoTyping').checked = !!s.autoTyping;
+}
+
+function collectSettingsFromUI() {
+    return {
+        prefix: document.getElementById('set-prefix').value.trim() || '.',
+        botName: document.getElementById('set-botName').value.trim(),
+        footer: document.getElementById('set-footer').value.trim(),
+        workMode: document.getElementById('set-workMode').value,
+        antibug: document.getElementById('set-antibug').checked,
+        antispam: document.getElementById('set-antispam').checked,
+        antilink: document.getElementById('set-antilink').checked,
+        antidelete: document.getElementById('set-antidelete').checked,
+        anticall: document.getElementById('set-anticall').checked,
+        antimedia: document.getElementById('set-antimedia').value,
+        autoRead: document.getElementById('set-autoRead').checked,
+        autoReact: document.getElementById('set-autoReact').checked,
+        autoTyping: document.getElementById('set-autoTyping').checked
+    };
+}
+
+document.getElementById('sessionPicker').onchange = async (e) => {
+    currentSessionId = e.target.value;
+    if (!currentSessionId) return;
+    try {
+        const d = await api('/api/settings/' + encodeURIComponent(currentSessionId));
+        applySettingsToUI(d.settings);
+    } catch (err) {
+        showToast(err.message, true);
+    }
+};
+
+document.getElementById('saveBtn').onclick = async () => {
+    if (!currentSessionId) return;
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving…';
+    try {
+        await api('/api/settings/' + encodeURIComponent(currentSessionId), {
+            method: 'POST',
+            body: JSON.stringify(collectSettingsFromUI())
+        });
+        showToast('Settings saved ✅');
+    } catch (e) {
+        showToast(e.message, true);
+    }
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-save"></i> Save All Changes';
+};
+
+document.getElementById('resetBtn').onclick = async () => {
+    if (!currentSessionId) return;
+    if (!confirm('Reset all settings to defaults?')) return;
+    const btn = document.getElementById('resetBtn');
+    btn.disabled = true;
+    try {
+        await api('/api/settings/' + encodeURIComponent(currentSessionId) + '/reset', { method: 'POST' });
+        showToast('Reset to defaults');
+        const d = await api('/api/settings/' + encodeURIComponent(currentSessionId));
+        applySettingsToUI(d.settings);
+    } catch (e) {
+        showToast(e.message, true);
+    }
+    btn.disabled = false;
+};
+
+function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escapeAttr(s) { return String(s || '').replace(/"/g, '&quot;'); }
+
+loadSessions();
+</script>
+</body>
+</html>
