@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Channel | 303-XMD</title>
+<meta name="theme-color" content="#ff6b9d">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📢</text></svg>">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/theme.css">
+</head>
+<body>
+
+<div id="appSidebarMount"></div>
+
+<main class="app-content">
+    <div class="page-head">
+        <div>
+            <h2>Channel Control</h2>
+            <div class="sub">Publish and monitor your newsletter</div>
+        </div>
+        <div class="status-pill off" id="chStatus">
+            <span class="dot"></span>
+            <span id="chRole">Checking…</span>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head">
+            <div class="card-head-icon"><i class="fas fa-paper-plane"></i></div>
+            <div>
+                <h3>Publish a Post</h3>
+                <p>Sends directly to your WhatsApp channel</p>
+            </div>
+        </div>
+        <label class="field-label">Message</label>
+        <textarea class="textarea" id="chText" placeholder="Write your announcement…"></textarea>
+        <div class="btn-row">
+            <button class="btn btn-primary" id="chPostBtn"><i class="fas fa-paper-plane"></i> Publish</button>
+            <button class="btn btn-ghost" id="chRefreshBtn"><i class="fas fa-rotate"></i> Refresh</button>
+        </div>
+        <div class="error" id="chErr"></div>
+        <div class="ok" id="chOk"></div>
+    </div>
+
+    <div class="card">
+        <div class="card-head">
+            <div class="card-head-icon"><i class="fas fa-clock-rotate-left"></i></div>
+            <div>
+                <h3>Recent Posts</h3>
+                <p>Last 10 posts from your channel</p>
+            </div>
+        </div>
+        <div id="chPosts"><div class="empty"><i class="fas fa-spinner fa-spin"></i>Loading…</div></div>
+    </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/sidebar.js"></script>
+<script>
+const CH_API_KEY = '303xmd_k9Xp2mQz7LvN4rT8wYbH6jF3sD1cA5eG';
+
+const toastEl = document.getElementById('toast');
+function showToast(msg, err = false) {
+    toastEl.textContent = msg;
+    toastEl.classList.toggle('err', err);
+    toastEl.classList.add('show');
+    setTimeout(() => toastEl.classList.remove('show'), 2400);
+}
+
+async function chFetch(path, opts = {}) {
+    const r = await fetch(path, {
+        ...opts,
+        headers: { 'Content-Type': 'application/json', 'x-api-key': CH_API_KEY, ...(opts.headers || {}) },
+        cache: 'no-store'
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    return d;
+}
+
+async function loadChannelInfo() {
+    const roleTxt = document.getElementById('chRole');
+    const pill = document.getElementById('chStatus');
+    try {
+        const d = await chFetch('/api/channel/info');
+        if (d.connected) {
+            pill.classList.remove('off');
+            roleTxt.innerText = `${d.name || 'Channel'} · ${d.role || '?'} · ${d.subscribers || '?'} subs`;
+        } else {
+            pill.classList.add('off');
+            roleTxt.innerText = 'No active session';
+        }
+    } catch {
+        pill.classList.add('off');
+        roleTxt.innerText = 'Unavailable';
+    }
+}
+
+async function loadChannelPosts() {
+    const box = document.getElementById('chPosts');
+    box.innerHTML = '<div class="empty"><i class="fas fa-spinner fa-spin"></i>Loading…</div>';
+    try {
+        const d = await chFetch('/api/channel/posts?limit=10');
+        if (!d.posts.length) {
+            box.innerHTML = '<div class="empty"><i class="fas fa-inbox"></i>No posts logged yet</div>';
+            return;
+        }
+        box.innerHTML = d.posts.map(p => `
+            <div style="border-left:3px solid var(--g1);padding:12px 16px;margin-bottom:10px;background:rgba(255,255,255,.03);border-radius:10px">
+                <div style="color:var(--muted);font-size:10px;letter-spacing:1px;margin-bottom:6px">
+                    <i class="far fa-clock"></i> ${new Date(p.timestamp).toLocaleString()}
+                </div>
+                <div style="font-size:13px;color:var(--text);line-height:1.5">${escapeHtml((p.text || '[media]').slice(0, 200))}</div>
+            </div>
+        `).join('');
+    } catch (e) {
+        box.innerHTML = `<div class="empty">❌ ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+document.getElementById('chPostBtn').onclick = async () => {
+    const text = document.getElementById('chText').value.trim();
+    const err = document.getElementById('chErr');
+    const ok  = document.getElementById('chOk');
+    const btn = document.getElementById('chPostBtn');
+    err.classList.remove('show');
+    ok.classList.remove('show');
+    if (!text) { err.innerText = 'Enter text'; err.classList.add('show'); return; }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="skeleton"></span> Publishing…';
+    try {
+        await chFetch('/api/channel/post', { method: 'POST', body: JSON.stringify({ text }) });
+        document.getElementById('chText').value = '';
+        ok.innerText = '✅ Posted successfully';
+        ok.classList.add('show');
+        showToast('Posted!');
+        loadChannelPosts();
+    } catch (e) {
+        err.innerText = e.message;
+        err.classList.add('show');
+    }
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-paper-plane"></i> Publish';
+};
+
+document.getElementById('chRefreshBtn').onclick = () => {
+    loadChannelInfo();
+    loadChannelPosts();
+};
+
+function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+}
+
+loadChannelInfo();
+loadChannelPosts();
+</script>
+</body>
+</html>
