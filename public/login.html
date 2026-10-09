@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Login | 303-XMD</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔑</text></svg>">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/theme.css">
+</head>
+<body class="theme-login auth-body">
+
+<div class="auth-card">
+    <div class="auth-brand">
+        <div class="auth-logo"><i class="fas fa-key"></i></div>
+        <h1>303-XMD</h1>
+        <p>Welcome Back</p>
+    </div>
+
+    <div class="error" id="err"></div>
+
+    <form id="loginForm">
+        <label class="field-label">Email Address</label>
+        <input class="input" type="email" id="email" placeholder="you@example.com" autocomplete="email" required>
+
+        <label class="field-label">Password</label>
+        <input class="input" type="password" id="password" placeholder="Your password" autocomplete="current-password" required>
+
+        <button type="submit" class="btn btn-primary btn-block" id="loginBtn">
+            <i class="fas fa-right-to-bracket"></i> Login
+        </button>
+    </form>
+
+    <div class="auth-link">Don't have an account? <a href="/register">Register</a></div>
+    <div class="auth-footer">DEVELOPED BY <a href="https://wa.me/254794376595">MR PRESENTER</a></div>
+</div>
+
+<script>
+const form = document.getElementById('loginForm');
+const errBox = document.getElementById('err');
+const loginBtn = document.getElementById('loginBtn');
+
+form.onsubmit = async (e) => {
+    e.preventDefault();
+    errBox.classList.remove('show');
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    loginBtn.disabled = true;
+    loginBtn.innerHTML = '<span class="skeleton"></span> LOGGING IN...';
+    try {
+        const r = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        const data = await r.json();
+        if (!r.ok || data.error) throw new Error(data.error || 'Login failed');
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        location.href = '/dashboard';
+    } catch (err) {
+        errBox.innerText = err.message;
+        errBox.classList.add('show');
+        loginBtn.disabled = false;
+        loginBtn.innerHTML = '<i class="fas fa-right-to-bracket"></i> Login';
+    }
+};
+</script>
+</body>
+</html>
