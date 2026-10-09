@@ -3,139 +3,594 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>303-XMD v2 | Pairing Panel</title>
+<title>303-XMD v2 | Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:radial-gradient(circle at 20% 10%,#001a2e 0%,#000814 45%,#000 100%);color:#e6f7ff;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;padding:24px 20px;display:flex;justify-content:center}
-body::before{content:'';position:fixed;inset:0;pointer-events:none;background:radial-gradient(circle at 85% 90%,rgba(0,229,255,.15),transparent 55%),radial-gradient(circle at 10% 85%,rgba(168,85,247,.15),transparent 50%)}
+:root{
+    --cyan:#00e5ff;
+    --purple:#a855f7;
+    --bg:#000814;
+    --bg2:#001018;
+    --panel:rgba(0,15,25,.85);
+    --border:rgba(0,229,255,.35);
+    --muted:#5f7f8f;
+    --text:#e6f7ff;
+    --danger:#ff8fa3;
+    --ok:#00ff9d;
+}
+html,body{height:100%}
+body{
+    background:radial-gradient(circle at 20% 10%,#001a2e 0%,#000814 45%,#000 100%);
+    color:var(--text);
+    font-family:'Segoe UI',system-ui,sans-serif;
+    min-height:100vh;
+    overflow-x:hidden;
+}
+body::before{
+    content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:
+        radial-gradient(circle at 85% 90%,rgba(0,229,255,.15),transparent 55%),
+        radial-gradient(circle at 10% 85%,rgba(168,85,247,.15),transparent 50%);
+}
 
-/* ---- wrapper stacks both cards vertically ---- */
-.stack{position:relative;width:100%;max-width:480px;display:flex;flex-direction:column;gap:20px;z-index:2}
+/* ================== LAYOUT ================== */
+.shell{
+    display:grid;
+    grid-template-columns:260px 1fr;
+    min-height:100vh;
+    position:relative;
+    z-index:1;
+}
 
-.container{position:relative;background:rgba(0,15,25,.85);backdrop-filter:blur(24px);border:1px solid rgba(0,229,255,.5);box-shadow:0 0 40px rgba(0,229,255,.35),0 0 80px rgba(168,85,247,.15) inset;padding:34px 26px;border-radius:20px;width:100%}
-.container::before,.container::after{content:'';position:absolute;width:24px;height:24px;border:2px solid #00e5ff}
-.container::before{top:-2px;left:-2px;border-right:none;border-bottom:none;border-radius:20px 0 0 0}
-.container::after{bottom:-2px;right:-2px;border-left:none;border-top:none;border-radius:0 0 20px 0}
+/* ================== SIDEBAR ================== */
+.sidebar{
+    background:rgba(0,10,20,.92);
+    backdrop-filter:blur(20px);
+    border-right:1px solid rgba(0,229,255,.2);
+    padding:24px 18px;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    position:sticky;
+    top:0;
+    height:100vh;
+    overflow-y:auto;
+}
+.brand{
+    display:flex;align-items:center;gap:12px;
+    padding:10px 8px 20px;
+    border-bottom:1px solid rgba(0,229,255,.15);
+    margin-bottom:14px;
+}
+.brand .logo{
+    width:44px;height:44px;border-radius:12px;
+    background:linear-gradient(135deg,var(--cyan),var(--purple));
+    display:flex;align-items:center;justify-content:center;
+    font-size:22px;color:#000;
+    box-shadow:0 0 20px rgba(0,229,255,.4);
+}
+.brand .meta h1{
+    font-size:15px;letter-spacing:3px;
+    background:linear-gradient(135deg,var(--cyan),var(--purple));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.brand .meta p{font-size:9px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin-top:2px}
 
-.brand{text-align:center;margin-bottom:22px}
-.brand .key{font-size:44px;background:linear-gradient(135deg,#00e5ff,#a855f7);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 20px rgba(0,229,255,.7));animation:pulse 2.5s infinite;display:inline-block}
-@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08);opacity:.85}}
-.brand h1{font-size:26px;letter-spacing:6px;background:linear-gradient(135deg,#00e5ff,#a855f7);-webkit-background-clip:text;background-clip:text;color:transparent;margin-top:10px}
-.brand p{color:#5f7f8f;font-size:11px;letter-spacing:3px;margin-top:6px;text-transform:uppercase}
+.nav-label{font-size:10px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;padding:14px 10px 6px}
+.nav-item{
+    display:flex;align-items:center;gap:12px;
+    padding:12px 14px;
+    border-radius:11px;
+    color:#a4c4d4;
+    font-size:13px;
+    cursor:pointer;
+    transition:.2s;
+    border:1px solid transparent;
+    user-select:none;
+}
+.nav-item:hover{background:rgba(0,229,255,.06);color:#fff}
+.nav-item.active{
+    background:linear-gradient(135deg,rgba(0,229,255,.15),rgba(168,85,247,.12));
+    color:#fff;
+    border-color:rgba(0,229,255,.4);
+    box-shadow:0 0 15px rgba(0,229,255,.15);
+}
+.nav-item i{width:18px;text-align:center;font-size:14px}
+.nav-item .badge{margin-left:auto;font-size:9px;background:var(--cyan);color:#000;padding:2px 6px;border-radius:6px;font-weight:800}
 
-input,textarea{width:100%;padding:15px;margin-bottom:12px;background:#001018;border:1px solid rgba(0,229,255,.35);color:#e6f7ff;font-size:16px;text-align:center;letter-spacing:2px;border-radius:12px;outline:none;transition:.25s;font-family:inherit}
-textarea{text-align:left;letter-spacing:0;min-height:90px;resize:vertical;font-size:14px}
-input:focus,textarea:focus{border-color:#00e5ff;box-shadow:0 0 24px rgba(0,229,255,.4)}
+.sidebar-footer{
+    margin-top:auto;padding-top:14px;
+    border-top:1px solid rgba(0,229,255,.15);
+    font-size:10px;color:var(--muted);
+    text-align:center;letter-spacing:2px;
+}
+.sidebar-footer a{color:var(--cyan);text-decoration:none}
 
-button{background:linear-gradient(135deg,#00e5ff,#a855f7);color:#000;border:none;padding:15px 20px;font-weight:800;font-size:13px;letter-spacing:2px;text-transform:uppercase;border-radius:12px;cursor:pointer;width:100%;transition:.25s;display:flex;align-items:center;justify-content:center;gap:8px}
-button:hover:not(:disabled){filter:brightness(1.15);box-shadow:0 0 30px rgba(0,229,255,.55);transform:translateY(-2px)}
-button:disabled{opacity:.5;cursor:not-allowed}
-button.ghost{background:transparent;border:1px solid rgba(0,229,255,.5);color:#7fe6ff}
-
-.btn-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
-
-.code-box{font-size:34px;font-weight:800;letter-spacing:9px;text-align:center;color:#fff;background:#000814;padding:24px 12px;border-radius:16px;border:1px dashed rgba(0,229,255,.7);margin:18px 0;word-break:break-all;text-shadow:0 0 24px rgba(0,229,255,.9);cursor:pointer;position:relative}
-.code-box::after{content:'TAP TO COPY';position:absolute;bottom:6px;right:10px;font-size:8px;letter-spacing:2px;color:#456;font-weight:600}
-
-.instructions{background:rgba(0,229,255,.06);border-left:3px solid #00e5ff;padding:14px 16px;border-radius:10px;font-size:13px;color:#bcd;line-height:1.75;margin-top:14px;text-align:left}
-.instructions b{color:#7fe6ff}
-
-.status-line{display:flex;align-items:center;justify-content:center;gap:8px;font-size:12px;color:#5f7f8f;margin-top:14px}
-.dot{width:8px;height:8px;border-radius:50%;background:#00ff9d;box-shadow:0 0 10px #00ff9d;animation:blink 1.4s infinite}
+/* ================== MAIN ================== */
+.main{
+    padding:30px 40px 60px;
+    max-width:1400px;
+    width:100%;
+}
+.page-head{
+    display:flex;align-items:center;justify-content:space-between;
+    margin-bottom:26px;flex-wrap:wrap;gap:14px;
+}
+.page-head h2{
+    font-size:24px;letter-spacing:3px;
+    background:linear-gradient(135deg,var(--cyan),var(--purple));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.page-head .sub{font-size:11px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-top:4px}
+.status-pill{
+    display:inline-flex;align-items:center;gap:8px;
+    background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.35);
+    padding:8px 14px;border-radius:100px;font-size:11px;letter-spacing:1px;
+}
+.status-pill .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px var(--ok);animation:blink 1.4s infinite}
+.status-pill.off .dot{background:var(--danger);box-shadow:0 0 10px var(--danger)}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
 
-.error-box{color:#ff8fa3;font-size:12px;text-align:center;padding:12px;border-radius:10px;background:rgba(255,42,90,.12);border:1px solid rgba(255,42,90,.4);margin-top:12px;display:none}
-.error-box.show{display:block}
+/* ================== PANELS ================== */
+.panel{
+    background:var(--panel);
+    backdrop-filter:blur(24px);
+    border:1px solid var(--border);
+    border-radius:20px;
+    padding:28px 26px;
+    box-shadow:0 0 40px rgba(0,229,255,.15);
+    margin-bottom:22px;
+    position:relative;
+}
+.panel::before,.panel::after{
+    content:'';position:absolute;width:20px;height:20px;border:2px solid var(--cyan);
+}
+.panel::before{top:-2px;left:-2px;border-right:none;border-bottom:none;border-radius:20px 0 0 0}
+.panel::after{bottom:-2px;right:-2px;border-left:none;border-top:none;border-radius:0 0 20px 0}
 
-.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:linear-gradient(135deg,#00e5ff,#a855f7);color:#000;padding:12px 22px;border-radius:10px;font-weight:700;font-size:13px;transition:transform .3s;z-index:100;pointer-events:none}
+.panel-head{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+.panel-head .icon{
+    width:38px;height:38px;border-radius:10px;
+    background:linear-gradient(135deg,var(--cyan),var(--purple));
+    display:flex;align-items:center;justify-content:center;
+    color:#000;font-size:16px;
+}
+.panel-head h3{font-size:14px;letter-spacing:2px;text-transform:uppercase}
+.panel-head p{font-size:11px;color:var(--muted);margin-top:2px}
+
+/* ================== FORM ================== */
+label.fld{display:block;font-size:10px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}
+input,textarea,select{
+    width:100%;padding:14px 16px;
+    background:var(--bg2);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-radius:12px;outline:none;transition:.25s;
+    font-size:14px;font-family:inherit;
+}
+textarea{min-height:100px;resize:vertical;line-height:1.5}
+input:focus,textarea:focus,select:focus{
+    border-color:var(--cyan);box-shadow:0 0 20px rgba(0,229,255,.3);
+}
+input.center{text-align:center;letter-spacing:3px;font-size:16px}
+
+button{
+    background:linear-gradient(135deg,var(--cyan),var(--purple));
+    color:#000;border:none;padding:14px 22px;
+    font-weight:800;font-size:12px;letter-spacing:2px;text-transform:uppercase;
+    border-radius:12px;cursor:pointer;transition:.25s;
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    font-family:inherit;
+}
+button:hover:not(:disabled){filter:brightness(1.15);box-shadow:0 0 26px rgba(0,229,255,.5);transform:translateY(-1px)}
+button:disabled{opacity:.5;cursor:not-allowed}
+button.ghost{background:transparent;border:1px solid rgba(0,229,255,.5);color:#7fe6ff}
+button.ghost:hover:not(:disabled){background:rgba(0,229,255,.08)}
+button.wide{width:100%}
+
+.btn-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.btn-row.three{grid-template-columns:1fr 1fr 1fr}
+.btn-row.one{grid-template-columns:1fr}
+
+/* ================== CODE BOX ================== */
+.code-box{
+    font-size:32px;font-weight:800;letter-spacing:9px;
+    text-align:center;color:#fff;background:#000814;
+    padding:24px 12px;border-radius:16px;
+    border:1px dashed rgba(0,229,255,.7);
+    margin:18px 0;word-break:break-all;
+    text-shadow:0 0 24px rgba(0,229,255,.9);
+    cursor:pointer;position:relative;
+    transition:.2s;
+}
+.code-box:hover{border-style:solid;background:#001018}
+.code-box::after{
+    content:'TAP TO COPY';position:absolute;bottom:6px;right:10px;
+    font-size:8px;letter-spacing:2px;color:#456;font-weight:600;
+}
+
+/* ================== INSTRUCTION BLOCK ================== */
+.instructions{
+    background:rgba(0,229,255,.06);
+    border-left:3px solid var(--cyan);
+    padding:14px 16px;border-radius:10px;
+    font-size:13px;color:#bcd;line-height:1.75;
+    margin-top:14px;
+}
+.instructions b{color:#7fe6ff}
+
+/* ================== ERROR / OK BOXES ================== */
+.error-box{
+    color:var(--danger);font-size:12px;
+    padding:12px 14px;border-radius:10px;
+    background:rgba(255,42,90,.12);
+    border:1px solid rgba(255,42,90,.4);
+    margin-top:12px;display:none;
+}
+.error-box.show{display:block}
+.ok-box{
+    color:var(--ok);font-size:12px;
+    padding:12px 14px;border-radius:10px;
+    background:rgba(0,255,157,.08);
+    border:1px solid rgba(0,255,157,.35);
+    margin-top:12px;display:none;
+}
+.ok-box.show{display:block}
+
+/* ================== POST LIST ================== */
+.post-item{
+    border-left:2px solid var(--cyan);
+    padding:10px 14px;margin-bottom:10px;
+    background:rgba(0,229,255,.05);
+    border-radius:8px;
+    transition:.2s;
+}
+.post-item:hover{background:rgba(0,229,255,.08);transform:translateX(2px)}
+.post-item .date{color:var(--muted);font-size:10px;letter-spacing:1px;margin-bottom:4px}
+.post-item .txt{font-size:13px;color:#cde}
+
+/* ================== TOAST ================== */
+.toast{
+    position:fixed;bottom:24px;left:50%;
+    transform:translateX(-50%) translateY(80px);
+    background:linear-gradient(135deg,var(--cyan),var(--purple));
+    color:#000;padding:13px 24px;border-radius:12px;
+    font-weight:700;font-size:13px;letter-spacing:1px;
+    transition:transform .3s;z-index:100;
+    pointer-events:none;
+    box-shadow:0 0 30px rgba(0,229,255,.5);
+}
 .toast.show{transform:translateX(-50%) translateY(0)}
 
-.footer{text-align:center;color:#456;font-size:10px;letter-spacing:3px;margin-top:26px}
-.footer a{color:#7fe6ff;text-decoration:none}
+/* ================== PAGES ================== */
+.page{display:none;animation:fade .25s ease}
+.page.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
-.skeleton{display:inline-block;width:20px;height:20px;border:2px solid rgba(0,0,0,.3);border-top-color:#000;border-radius:50%;animation:spin .8s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
+/* ================== HERO (landing) ================== */
+.hero{
+    text-align:center;padding:20px 10px 30px;
+}
+.hero .big-logo{
+    width:88px;height:88px;border-radius:24px;
+    background:linear-gradient(135deg,var(--cyan),var(--purple));
+    display:inline-flex;align-items:center;justify-content:center;
+    font-size:40px;color:#000;
+    box-shadow:0 0 50px rgba(0,229,255,.6);
+    animation:pulse 3s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05);filter:brightness(1.1)}}
+.hero h1{
+    font-size:32px;letter-spacing:8px;margin-top:20px;
+    background:linear-gradient(135deg,var(--cyan),var(--purple));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.hero p{font-size:12px;color:var(--muted);letter-spacing:4px;text-transform:uppercase;margin-top:8px}
+.hero .cta{margin-top:26px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
 
-.step{display:none}
-.step.active{display:block}
+.stat-grid{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+    gap:14px;margin-top:22px;
+}
+.stat-card{
+    background:rgba(0,229,255,.05);
+    border:1px solid rgba(0,229,255,.25);
+    border-radius:14px;padding:18px;text-align:center;
+}
+.stat-card .num{
+    font-size:26px;font-weight:800;
+    background:linear-gradient(135deg,var(--cyan),var(--purple));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.stat-card .lbl{font-size:10px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-top:6px}
 
-.post-item{border-left:2px solid #00e5ff;padding:6px 10px;margin-bottom:8px;background:rgba(0,229,255,.05);border-radius:6px}
-.post-item .date{color:#5f7f8f;font-size:10px}
+.feature-grid{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+    gap:14px;margin-top:14px;
+}
+.feature{
+    background:rgba(0,229,255,.04);
+    border:1px solid rgba(0,229,255,.2);
+    border-radius:14px;padding:18px;
+}
+.feature .ic{
+    width:36px;height:36px;border-radius:10px;
+    background:linear-gradient(135deg,var(--cyan),var(--purple));
+    display:flex;align-items:center;justify-content:center;
+    color:#000;font-size:15px;margin-bottom:12px;
+}
+.feature h4{font-size:13px;letter-spacing:1px;margin-bottom:6px}
+.feature p{font-size:12px;color:#9bbccf;line-height:1.55}
 
-.card-title{font-size:14px;letter-spacing:3px;background:linear-gradient(135deg,#00e5ff,#a855f7);-webkit-background-clip:text;background-clip:text;color:transparent}
+/* ================== MOBILE ================== */
+.menu-toggle{
+    display:none;
+    position:fixed;top:16px;left:16px;z-index:60;
+    background:linear-gradient(135deg,var(--cyan),var(--purple));
+    border:none;width:44px;height:44px;border-radius:12px;
+    color:#000;font-size:18px;cursor:pointer;
+    box-shadow:0 0 20px rgba(0,229,255,.4);
+}
+.overlay{
+    display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);
+    z-index:40;backdrop-filter:blur(4px);
+}
+.overlay.show{display:block}
 
-@media(max-width:480px){.container{padding:26px 18px}.brand h1{font-size:20px}.code-box{font-size:24px;letter-spacing:5px;padding:18px 10px}}
+@media(max-width:900px){
+    .shell{grid-template-columns:1fr}
+    .sidebar{
+        position:fixed;left:-280px;top:0;bottom:0;width:260px;
+        transition:left .3s;z-index:50;
+    }
+    .sidebar.open{left:0}
+    .menu-toggle{display:flex;align-items:center;justify-content:center}
+    .main{padding:70px 20px 60px}
+    .page-head h2{font-size:18px}
+    .hero h1{font-size:22px;letter-spacing:4px}
+    .code-box{font-size:22px;letter-spacing:5px}
+    .btn-row.three{grid-template-columns:1fr}
+}
 </style>
 </head>
 <body>
 
-<!-- ===== VERTICAL STACK: pairing card first, channel control below ===== -->
-<div class="stack">
+<button class="menu-toggle" id="menuToggle"><i class="fas fa-bars"></i></button>
+<div class="overlay" id="overlay"></div>
 
-    <!-- ========== CARD 1: PAIRING ========== -->
-    <div class="container">
+<div class="shell">
+
+    <!-- ================== SIDEBAR ================== -->
+    <aside class="sidebar" id="sidebar">
         <div class="brand">
-            <div class="key"><i class="fas fa-key"></i></div>
-            <h1>303-XMD</h1>
-            <p>v2 · The Last Key</p>
-        </div>
-
-        <div class="step active" id="step-pair">
-            <p style="font-size:13px;color:#bcd;text-align:center;margin-bottom:12px">Enter phone number with country code</p>
-            <input type="tel" id="phoneNum" placeholder="254712345678" inputmode="numeric" autocomplete="off" maxlength="15">
-            <button id="submitBtn"><i class="fas fa-key"></i> Generate Pairing Code</button>
-            <div class="error-box" id="err"></div>
-        </div>
-
-        <div class="step" id="step-result">
-            <p style="color:#7fffcf;font-size:13px;text-align:center;font-weight:600"><i class="fas fa-check-circle"></i> CODE READY</p>
-            <div class="code-box" id="codeDisplay" title="Tap to copy">----</div>
-            <div class="instructions">
-                <b>HOW TO PAIR:</b><br>
-                1. Open WhatsApp on your phone.<br>
-                2. Go to <b>Linked Devices</b>.<br>
-                3. Tap <b>Link with Phone Number</b>.<br>
-                4. Enter the 8-digit code shown above.
-            </div>
-            <div class="status-line"><span class="dot"></span> Code active — enter it in WhatsApp</div>
-            <div class="btn-row">
-                <button id="copyBtn"><i class="fas fa-copy"></i> Copy</button>
-                <button class="ghost" id="againBtn"><i class="fas fa-redo"></i> Again</button>
+            <div class="logo"><i class="fas fa-key"></i></div>
+            <div class="meta">
+                <h1>303-XMD</h1>
+                <p>v2 · The Last Key</p>
             </div>
         </div>
 
-        <div class="footer">DEVELOPED BY <a href="https://wa.me/254794376595">MR PRESENTER</a> © 2025</div>
-    </div>
+        <div class="nav-label">Main</div>
+        <div class="nav-item active" data-page="home"><i class="fas fa-house"></i> Dashboard</div>
+        <div class="nav-item" data-page="pair"><i class="fas fa-link"></i> Pair Session</div>
+        <div class="nav-item" data-page="channel"><i class="fas fa-tower-broadcast"></i> Channel Control</div>
 
-    <!-- ========== CARD 2: CHANNEL CONTROL ========== -->
-    <div class="container">
-        <div class="brand" style="margin-bottom:12px">
-            <h1 class="card-title">CHANNEL CONTROL</h1>
-            <p id="chRole" style="font-size:10px">checking…</p>
+        <div class="nav-label">System</div>
+        <div class="nav-item" data-page="stats"><i class="fas fa-chart-simple"></i> Statistics</div>
+        <div class="nav-item" data-page="about"><i class="fas fa-circle-info"></i> About</div>
+
+        <div class="sidebar-footer">
+            Developed by<br>
+            <a href="https://wa.me/254794376595" target="_blank">MR PRESENTER</a>
+            <br>© 2025
         </div>
+    </aside>
 
-        <textarea id="chText" placeholder="Write a post to publish to the channel…"></textarea>
+    <!-- ================== MAIN CONTENT ================== -->
+    <main class="main">
 
-        <div class="btn-row">
-            <button id="chPostBtn"><i class="fas fa-paper-plane"></i> Publish</button>
-            <button class="ghost" id="chRefreshBtn"><i class="fas fa-rotate"></i> Refresh</button>
-        </div>
+        <!-- ============ PAGE: HOME ============ -->
+        <section class="page active" id="page-home">
+            <div class="panel">
+                <div class="hero">
+                    <div class="big-logo"><i class="fas fa-key"></i></div>
+                    <h1>303-XMD</h1>
+                    <p>The Last Key · Advanced WhatsApp Bot</p>
+                    <div class="cta">
+                        <button onclick="go('pair')"><i class="fas fa-link"></i> Pair Now</button>
+                        <button class="ghost" onclick="go('channel')"><i class="fas fa-tower-broadcast"></i> Channel</button>
+                    </div>
+                </div>
 
-        <div id="chErr" class="error-box"></div>
+                <div class="stat-grid">
+                    <div class="stat-card"><div class="num" id="homeSessions">0</div><div class="lbl">Sessions</div></div>
+                    <div class="stat-card"><div class="num" id="homeActive">0</div><div class="lbl">Active</div></div>
+                    <div class="stat-card"><div class="num" id="homeUptime">0s</div><div class="lbl">Uptime</div></div>
+                    <div class="stat-card"><div class="num" id="homeVersion">2.0.0</div><div class="lbl">Version</div></div>
+                </div>
 
-        <div style="margin-top:16px">
-            <p style="font-size:11px;color:#5f7f8f;letter-spacing:2px;margin-bottom:8px">RECENT POSTS</p>
-            <div id="chPosts" style="font-size:12px;color:#bcd;line-height:1.6"></div>
-        </div>
-    </div>
+                <div style="margin-top:26px">
+                    <h3 style="font-size:13px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin-bottom:12px">Features</h3>
+                    <div class="feature-grid">
+                        <div class="feature">
+                            <div class="ic"><i class="fas fa-robot"></i></div>
+                            <h4>Command Engine</h4>
+                            <p>Hot-reload commands — drop a file, it works instantly. No restart needed.</p>
+                        </div>
+                        <div class="feature">
+                            <div class="ic"><i class="fas fa-tower-broadcast"></i></div>
+                            <h4>Newsletter Bot</h4>
+                            <p>Auto-react, log, and forward posts from your WhatsApp channel.</p>
+                        </div>
+                        <div class="feature">
+                            <div class="ic"><i class="fas fa-shield-halved"></i></div>
+                            <h4>Security Suite</h4>
+                            <p>Antidelete, antibug, antispam, anticall, and group protection built-in.</p>
+                        </div>
+                        <div class="feature">
+                            <div class="ic"><i class="fas fa-server"></i></div>
+                            <h4>Multi-Session</h4>
+                            <p>Up to 12 WhatsApp accounts on a single deploy, all stored in MongoDB.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
 
+        <!-- ============ PAGE: PAIR ============ -->
+        <section class="page" id="page-pair">
+            <div class="page-head">
+                <div>
+                    <h2>Pair Session</h2>
+                    <div class="sub">Link a WhatsApp device via pairing code</div>
+                </div>
+                <div class="status-pill off" id="pairStatus"><span class="dot"></span> <span id="pairStatusTxt">Checking…</span></div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head">
+                    <div class="icon"><i class="fas fa-link"></i></div>
+                    <div><h3>Generate Pairing Code</h3><p>Enter number with country code</p></div>
+                </div>
+
+                <div id="step-pair">
+                    <label class="fld">WhatsApp Number</label>
+                    <input type="tel" id="phoneNum" class="center" placeholder="254712345678" inputmode="numeric" maxlength="15">
+                    <button id="submitBtn" class="wide" style="margin-top:8px"><i class="fas fa-key"></i> Generate Pairing Code</button>
+                    <div class="error-box" id="err"></div>
+                </div>
+
+                <div id="step-result" style="display:none">
+                    <p style="color:var(--ok);font-size:12px;text-align:center;font-weight:700;letter-spacing:2px"><i class="fas fa-check-circle"></i> CODE READY</p>
+                    <div class="code-box" id="codeDisplay">----</div>
+                    <div class="instructions">
+                        <b>HOW TO PAIR:</b><br>
+                        1. Open WhatsApp on your phone.<br>
+                        2. Go to <b>Linked Devices</b>.<br>
+                        3. Tap <b>Link with Phone Number</b>.<br>
+                        4. Enter the 8-digit code above.
+                    </div>
+                    <div class="btn-row">
+                        <button id="copyBtn"><i class="fas fa-copy"></i> Copy</button>
+                        <button class="ghost" id="againBtn"><i class="fas fa-redo"></i> Again</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ PAGE: CHANNEL ============ -->
+        <section class="page" id="page-channel">
+            <div class="page-head">
+                <div>
+                    <h2>Channel Control</h2>
+                    <div class="sub">Publish posts & monitor your newsletter</div>
+                </div>
+                <div class="status-pill off" id="chStatus"><span class="dot"></span> <span id="chRole">Checking…</span></div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head">
+                    <div class="icon"><i class="fas fa-paper-plane"></i></div>
+                    <div><h3>Publish a Post</h3><p>Sends directly to your channel</p></div>
+                </div>
+                <label class="fld">Message</label>
+                <textarea id="chText" placeholder="Write your announcement…"></textarea>
+                <div class="btn-row" style="margin-top:10px">
+                    <button id="chPostBtn"><i class="fas fa-paper-plane"></i> Publish</button>
+                    <button class="ghost" id="chRefreshBtn"><i class="fas fa-rotate"></i> Refresh</button>
+                </div>
+                <div id="chErr" class="error-box"></div>
+                <div id="chOk" class="ok-box"></div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head">
+                    <div class="icon"><i class="fas fa-clock-rotate-left"></i></div>
+                    <div><h3>Recent Posts</h3><p>Last 10 posts from your channel</p></div>
+                </div>
+                <div id="chPosts" style="font-size:13px;color:#9bbccf"><i>Loading…</i></div>
+            </div>
+        </section>
+
+        <!-- ============ PAGE: STATS ============ -->
+        <section class="page" id="page-stats">
+            <div class="page-head">
+                <div>
+                    <h2>Statistics</h2>
+                    <div class="sub">Live system metrics</div>
+                </div>
+            </div>
+            <div class="panel">
+                <div class="stat-grid">
+                    <div class="stat-card"><div class="num" id="statTotal">0</div><div class="lbl">Total Sessions</div></div>
+                    <div class="stat-card"><div class="num" id="statActive">0</div><div class="lbl">Active</div></div>
+                    <div class="stat-card"><div class="num" id="statMax">12</div><div class="lbl">Max Slots</div></div>
+                    <div class="stat-card"><div class="num" id="statUptime">0s</div><div class="lbl">Uptime</div></div>
+                </div>
+                <button class="ghost" style="margin-top:18px" onclick="loadStats()"><i class="fas fa-rotate"></i> Refresh Stats</button>
+            </div>
+        </section>
+
+        <!-- ============ PAGE: ABOUT ============ -->
+        <section class="page" id="page-about">
+            <div class="page-head">
+                <div>
+                    <h2>About</h2>
+                    <div class="sub">Project information</div>
+                </div>
+            </div>
+            <div class="panel">
+                <div class="panel-head">
+                    <div class="icon"><i class="fas fa-key"></i></div>
+                    <div><h3>303-XMD</h3><p>The Last Key</p></div>
+                </div>
+                <p style="font-size:13px;color:#9bbccf;line-height:1.7;margin-bottom:16px">
+                    An advanced multi-session WhatsApp bot built on Baileys, featuring hot-reload
+                    commands, newsletter automation, and a modern web dashboard. Designed for
+                    reliability on Heroku and speed in production.
+                </p>
+                <div class="instructions">
+                    <b>STACK</b><br>
+                    Node.js · Baileys 6.7.9 · MongoDB · Express · Socket-free<br><br>
+                    <b>AUTHOR</b><br>
+                    <a href="https://wa.me/254794376595" style="color:#7fe6ff;text-decoration:none">Mr Presenter</a><br><br>
+                    <b>VERSION</b><br>
+                    2.0.0
+                </div>
+            </div>
+        </section>
+
+    </main>
 </div>
 
 <div class="toast" id="toast"></div>
 
 <script>
-// ---------- SESSION ----------
+// ================== NAVIGATION ==================
+const navItems = document.querySelectorAll('.nav-item');
+const pages    = document.querySelectorAll('.page');
+const sidebar  = document.getElementById('sidebar');
+const overlay  = document.getElementById('overlay');
+const menuBtn  = document.getElementById('menuToggle');
+
+function go(pageId) {
+    pages.forEach(p => p.classList.toggle('active', p.id === 'page-' + pageId));
+    navItems.forEach(n => n.classList.toggle('active', n.dataset.page === pageId));
+    sidebar.classList.remove('open');
+    overlay.classList.remove('show');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    if (pageId === 'channel') { loadChannelInfo(); loadChannelPosts(); }
+    if (pageId === 'stats')   { loadStats(); }
+    if (pageId === 'home')    { loadStats(); }
+}
+navItems.forEach(n => n.onclick = () => go(n.dataset.page));
+
+menuBtn.onclick = () => { sidebar.classList.toggle('open'); overlay.classList.toggle('show'); };
+overlay.onclick = () => { sidebar.classList.remove('open'); overlay.classList.remove('show'); };
+
+// ================== SESSION ==================
 function getSessionId() {
     let id = localStorage.getItem('xmd303_session_id');
     if (!id) {
@@ -146,21 +601,23 @@ function getSessionId() {
 }
 const SESSION_ID = getSessionId();
 
-const submitBtn  = document.getElementById('submitBtn');
-const phoneNum   = document.getElementById('phoneNum');
-const stepPair   = document.getElementById('step-pair');
-const stepResult = document.getElementById('step-result');
-const codeDisplay= document.getElementById('codeDisplay');
-const errBox     = document.getElementById('err');
-const copyBtn    = document.getElementById('copyBtn');
-const againBtn   = document.getElementById('againBtn');
-const toast      = document.getElementById('toast');
-
+// ================== TOAST ==================
+const toast = document.getElementById('toast');
 function showToast(msg) {
     toast.textContent = msg;
     toast.classList.add('show');
     setTimeout(() => toast.classList.remove('show'), 2200);
 }
+
+// ================== PAIRING ==================
+const submitBtn = document.getElementById('submitBtn');
+const phoneNum  = document.getElementById('phoneNum');
+const stepPair  = document.getElementById('step-pair');
+const stepRes   = document.getElementById('step-result');
+const codeBox   = document.getElementById('codeDisplay');
+const errBox    = document.getElementById('err');
+const copyBtn   = document.getElementById('copyBtn');
+const againBtn  = document.getElementById('againBtn');
 
 submitBtn.onclick = async () => {
     errBox.classList.remove('show');
@@ -171,18 +628,18 @@ submitBtn.onclick = async () => {
         return;
     }
     submitBtn.disabled = true;
-    submitBtn.innerHTML = '<span class="skeleton"></span> GENERATING...';
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating…';
     try {
-        const url = `/api/pair?sessionId=${encodeURIComponent(SESSION_ID)}&num=${encodeURIComponent(num)}`;
-        const r = await fetch(url, { cache: 'no-store' });
+        const r = await fetch(`/api/pair?sessionId=${encodeURIComponent(SESSION_ID)}&num=${encodeURIComponent(num)}`, { cache: 'no-store' });
         const text = await r.text();
         let data;
-        try { data = JSON.parse(text); } catch { throw new Error(`Server returned ${r.status} — not JSON`); }
+        try { data = JSON.parse(text); } catch { throw new Error(`Server returned ${r.status}`); }
         if (!r.ok || data.error) throw new Error(data.error || `Error ${r.status}`);
-        if (!data.code) throw new Error('No pairing code returned');
-        stepPair.classList.remove('active');
-        stepResult.classList.add('active');
-        codeDisplay.innerText = data.code;
+        if (!data.code) throw new Error('No code returned');
+
+        stepPair.style.display = 'none';
+        stepRes.style.display = 'block';
+        codeBox.innerText = data.code;
         showToast('Code generated!');
     } catch (e) {
         errBox.innerText = e.message;
@@ -193,16 +650,16 @@ submitBtn.onclick = async () => {
 };
 
 function copyCode() {
-    const code = codeDisplay.innerText.replace(/-/g, '').trim();
+    const code = codeBox.innerText.replace(/-/g, '').trim();
     if (!code || code === '----') return;
     navigator.clipboard.writeText(code).then(() => showToast('Copied!')).catch(() => {});
 }
-codeDisplay.onclick = copyCode;
+codeBox.onclick = copyCode;
 copyBtn.onclick = copyCode;
 
 againBtn.onclick = () => {
-    stepResult.classList.remove('active');
-    stepPair.classList.add('active');
+    stepRes.style.display = 'none';
+    stepPair.style.display = 'block';
     phoneNum.value = '';
     submitBtn.disabled = false;
     submitBtn.innerHTML = '<i class="fas fa-key"></i> Generate Pairing Code';
@@ -211,15 +668,13 @@ againBtn.onclick = () => {
 };
 
 phoneNum.addEventListener('keydown', e => { if (e.key === 'Enter') submitBtn.click(); });
-phoneNum.focus();
 
-// ---------- CHANNEL CONTROL ----------
-const CH_API_KEY = 'change-this-to-a-long-random-key'; // must match API_KEY in .env
-
+// ================== CHANNEL ==================
+const CH_API_KEY = 'change-this-to-a-long-random-key';
 async function chFetch(path, opts = {}) {
     const r = await fetch(path, {
         ...opts,
-        headers: { 'Content-Type': 'application/json', 'x-api-key': CH_API_KEY, ...(opts.headers||{}) },
+        headers: { 'Content-Type': 'application/json', 'x-api-key': CH_API_KEY, ...(opts.headers || {}) },
         cache: 'no-store'
     });
     const d = await r.json().catch(() => ({}));
@@ -228,41 +683,50 @@ async function chFetch(path, opts = {}) {
 }
 
 async function loadChannelInfo() {
+    const pill = document.getElementById('chStatus');
+    const roleTxt = document.getElementById('chRole');
     try {
         const d = await chFetch('/api/channel/info');
-        document.getElementById('chRole').innerText = d.connected
-            ? `${d.name || 'Channel'} — role: ${d.role || 'UNKNOWN'} — subs: ${d.subscribers || '?'}`
-            : 'No active session';
+        if (d.connected) {
+            pill.classList.remove('off');
+            roleTxt.innerText = `${d.name || 'Channel'} · ${d.role || '?'} · ${d.subscribers || '?'} subs`;
+        } else {
+            pill.classList.add('off');
+            roleTxt.innerText = 'No active session';
+        }
     } catch (e) {
-        document.getElementById('chRole').innerText = 'Info error: ' + e.message;
+        pill.classList.add('off');
+        roleTxt.innerText = 'Error';
     }
 }
 
 async function loadChannelPosts() {
     const box = document.getElementById('chPosts');
-    box.innerHTML = 'loading…';
+    box.innerHTML = 'Loading…';
     try {
         const d = await chFetch('/api/channel/posts?limit=10');
         if (!d.posts.length) { box.innerHTML = '<i>No posts logged yet.</i>'; return; }
         box.innerHTML = d.posts.map(p => `
             <div class="post-item">
-                <div class="date">${new Date(p.timestamp).toLocaleString()}</div>
-                <div>${(p.text || '[media]').slice(0,160)}</div>
+                <div class="date"><i class="far fa-clock"></i> ${new Date(p.timestamp).toLocaleString()}</div>
+                <div class="txt">${(p.text || '[media]').slice(0, 200)}</div>
             </div>
         `).join('');
     } catch (e) {
-        box.innerHTML = '<span style="color:#ff8fa3">' + e.message + '</span>';
+        box.innerHTML = `<span style="color:var(--danger)">${e.message}</span>`;
     }
 }
 
 document.getElementById('chPostBtn').onclick = async () => {
     const text = document.getElementById('chText').value.trim();
     const err = document.getElementById('chErr');
-    err.classList.remove('show');
+    const ok  = document.getElementById('chOk');
+    err.classList.remove('show'); ok.classList.remove('show');
     if (!text) { err.innerText = 'Enter text'; err.classList.add('show'); return; }
     try {
         await chFetch('/api/channel/post', { method: 'POST', body: JSON.stringify({ text }) });
         document.getElementById('chText').value = '';
+        ok.innerText = '✅ Posted successfully'; ok.classList.add('show');
         showToast('Posted!');
         loadChannelPosts();
     } catch (e) {
@@ -270,13 +734,60 @@ document.getElementById('chPostBtn').onclick = async () => {
     }
 };
 
-document.getElementById('chRefreshBtn').onclick = () => {
-    loadChannelInfo();
-    loadChannelPosts();
-};
+document.getElementById('chRefreshBtn').onclick = () => { loadChannelInfo(); loadChannelPosts(); };
 
-loadChannelInfo();
-loadChannelPosts();
+// ================== STATS ==================
+function fmtUptime(sec) {
+    const d = Math.floor(sec / 86400);
+    const h = Math.floor((sec % 86400) / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = Math.floor(sec % 60);
+    const p = [];
+    if (d) p.push(d + 'd');
+    if (h) p.push(h + 'h');
+    if (m) p.push(m + 'm');
+    p.push(s + 's');
+    return p.join(' ');
+}
+
+async function loadStats() {
+    try {
+        const r = await fetch('/api/stats', { cache: 'no-store' });
+        const d = await r.json();
+        document.getElementById('statTotal').innerText  = d.totalSessions ?? 0;
+        document.getElementById('statActive').innerText = d.activeSessions ?? 0;
+        document.getElementById('statMax').innerText    = d.maxSessions ?? 12;
+        document.getElementById('statUptime').innerText = fmtUptime(d.uptime || 0);
+
+        document.getElementById('homeSessions').innerText = d.totalSessions ?? 0;
+        document.getElementById('homeActive').innerText   = d.activeSessions ?? 0;
+        document.getElementById('homeUptime').innerText   = fmtUptime(d.uptime || 0);
+    } catch {}
+}
+
+// Check paired session status
+async function checkPair() {
+    try {
+        const r = await fetch(`/api/status?sessionId=${encodeURIComponent(SESSION_ID)}`, { cache: 'no-store' });
+        const d = await r.json();
+        const pill = document.getElementById('pairStatus');
+        const txt  = document.getElementById('pairStatusTxt');
+        if (d.connected) {
+            pill.classList.remove('off');
+            txt.innerText = 'Session connected';
+        } else {
+            pill.classList.add('off');
+            txt.innerText = 'Not paired';
+        }
+    } catch {}
+}
+
+// ================== BOOT ==================
+loadStats();
+checkPair();
+setInterval(loadStats, 15000);
+setInterval(checkPair, 15000);
+phoneNum.focus();
 </script>
 </body>
 </html>
