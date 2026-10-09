@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Admin | 303-XMD</title>
+<meta name="theme-color" content="#ffd700">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/theme.css">
+</head>
+<body>
+
+<div id="appSidebarMount"></div>
+
+<main class="app-content">
+    <div class="page-head">
+        <div>
+            <h2>Admin Panel</h2>
+            <div class="sub">Full platform control</div>
+        </div>
+        <div class="status-pill"><span class="dot"></span> Administrator</div>
+    </div>
+
+    <div class="tab-bar" id="adminTabs">
+        <button class="tab-btn active" data-tab="overview"><i class="fas fa-chart-line"></i> Overview</button>
+        <button class="tab-btn" data-tab="accounts"><i class="fas fa-users"></i> Accounts</button>
+        <button class="tab-btn" data-tab="sessions"><i class="fas fa-server"></i> Sessions</button>
+        <button class="tab-btn" data-tab="broadcast"><i class="fas fa-bullhorn"></i> Broadcast</button>
+    </div>
+
+    <!-- OVERVIEW -->
+    <section class="tab-pane active" id="pane-overview">
+        <div class="stats" id="overviewStats">
+            <div class="stat"><div class="l">Loading</div><div class="v">…</div></div>
+        </div>
+    </section>
+
+    <!-- ACCOUNTS -->
+    <section class="tab-pane" id="pane-accounts">
+        <div class="card">
+            <div class="card-head">
+                <div class="card-head-icon"><i class="fas fa-users"></i></div>
+                <div><h3>Accounts</h3><p>Manage all registered users</p></div>
+            </div>
+            <label class="field-label">Search</label>
+            <div style="display:flex;gap:8px">
+                <input class="input" type="text" id="accountSearch" placeholder="Search by email…" style="margin-bottom:0">
+                <button class="btn btn-primary" id="searchBtn"><i class="fas fa-search"></i></button>
+            </div>
+            <div id="accountsList" style="margin-top:16px">
+                <div class="empty"><i class="fas fa-spinner fa-spin"></i>Loading…</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- SESSIONS -->
+    <section class="tab-pane" id="pane-sessions">
+        <div class="card">
+            <div class="card-head">
+                <div class="card-head-icon"><i class="fas fa-server"></i></div>
+                <div><h3>Active Sessions</h3><p>All running WhatsApp connections</p></div>
+            </div>
+            <button class="btn btn-ghost btn-block" id="refreshSessionsBtn" style="margin-bottom:14px">
+                <i class="fas fa-sync"></i> Refresh
+            </button>
+            <div id="sessionsList">
+                <div class="empty"><i class="fas fa-spinner fa-spin"></i>Loading…</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- BROADCAST -->
+    <section class="tab-pane" id="pane-broadcast">
+        <div class="card">
+            <div class="card-head">
+                <div class="card-head-icon"><i class="fas fa-bullhorn"></i></div>
+                <div><h3>Broadcast</h3><p>Send to every connected session's own number</p></div>
+            </div>
+            <label class="field-label">Message</label>
+            <textarea class="textarea" id="broadcastText" placeholder="Your message here…"></textarea>
+            <button class="btn btn-primary btn-block" id="broadcastBtn">
+                <i class="fas fa-paper-plane"></i> Send Broadcast
+            </button>
+            <div class="error" id="err"></div>
+        </div>
+    </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/sidebar.js"></script>
+<script>
+// ---- AUTH + EMAIL GUARD ----
+const ADMIN_EMAIL = 'ryanobanga243@gmail.com';
+const token = localStorage.getItem('token');
+const user = JSON.parse(localStorage.getItem('user') || '{}');
+
+if (!token) {
+    location.href = '/login';
+}
+
+const email = (user.email || '').trim().toLowerCase();
+if (email !== ADMIN_EMAIL.toLowerCase()) {
+    document.body.innerHTML = `
+        <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;text-align:center;color:#fff;font-family:'Segoe UI',sans-serif;background:#000814">
+            <div>
+                <div style="font-size:48px;color:#ff5252;margin-bottom:16px"><i class="fas fa-shield-halved"></i></div>
+                <h2 style="letter-spacing:4px;margin-bottom:12px;font-size:22px">ACCESS DENIED</h2>
+                <p style="color:#8696a0;font-size:13px;max-width:340px;margin:0 auto 24px;line-height:1.6">
+                    This page is restricted to the administrator account.
+                </p>
+                <a href="/dashboard" style="display:inline-block;padding:12px 22px;border-radius:10px;
+                   background:linear-gradient(135deg,#00d4ff,#7b2ff7);color:#000;font-weight:700;
+                   text-decoration:none;letter-spacing:2px;font-size:12px">
+                    <i class="fas fa-arrow-left"></i> BACK TO DASHBOARD
+                </a>
+            </div>
+        </div>`;
+    throw new Error('Not admin');
+}
+
+// ---- HELPERS ----
+const toastEl = document.getElementById('toast');
+function toast(msg, isErr = false) {
+    toastEl.textContent = msg;
+    toastEl.classList.toggle('err', isErr);
+    toastEl.classList.add('show');
+    setTimeout(() => toastEl.classList.remove('show'), 2400);
+}
+function showErr(msg) {
+    const e = document.getElementById('err');
+    e.textContent = msg;
+    e.classList.add('show');
+    setTimeout(() => e.classList.remove('show'), 5000);
+}
+async function api(path, opts = {}) {
+    const r = await fetch(path, {
+        ...opts,
+        headers: {
+            'Authorization': 'Bearer ' + token,
+            ...(opts.body ? {'Content-Type': 'application/json'} : {}),
+            ...(opts.headers || {})
+        }
+    });
+    const text = await r.text();
+    let data; try { data = JSON.parse(text); } catch { data = {}; }
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+    return data;
+}
+function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escapeAttr(s) { return String(s || '').replace(/"/g, '&quot;'); }
+
+// ---- TABS ----
+document.querySelectorAll('#adminTabs .tab-btn').forEach(t => {
+    t.onclick = () => {
+        const tab = t.dataset.tab;
+        document.querySelectorAll('#adminTabs .tab-btn').forEach(x => x.classList.toggle('active', x === t));
+        document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+        document.getElementById('pane-' + tab).classList.add('active');
+        if (tab === 'accounts') loadAccounts();
+        if (tab === 'sessions') loadSessions();
+    };
+});
+
+// ---- OVERVIEW ----
+async function loadOverview() {
+    try {
+        const d = await api('/api/admin/overview');
+        document.getElementById('overviewStats').innerHTML = `
+            <div class="stat"><div class="l">Accounts</div><div class="v">${d.accounts}</div></div>
+            <div class="stat"><div class="l">Banned</div><div class="v">${d.banned}</div></div>
+            <div class="stat"><div class="l">Active Sessions</div><div class="v">${d.sessions.active}/${d.sessions.max}</div></div>
+            <div class="stat"><div class="l">Total Sessions</div><div class="v">${d.sessions.total}</div></div>
+            <div class="stat"><div class="l">Uptime</div><div class="v">${Math.floor(d.system.uptime/3600)}h</div></div>
+            <div class="stat"><div class="l">Heap</div><div class="v">${d.system.heapMB} MB</div></div>
+            <div class="stat"><div class="l">RSS</div><div class="v">${d.system.rssMB} MB</div></div>
+            <div class="stat"><div class="l">Node</div><div class="v" style="font-size:14px">${d.system.node}</div></div>
+        `;
+    } catch (e) {
+        showErr(e.message);
+    }
+}
+
+// ---- ACCOUNTS ----
+async function loadAccounts(q = '') {
+    try {
+        const url = '/api/admin/accounts' + (q ? '?q=' + encodeURIComponent(q) : '');
+        const d = await api(url);
+        const list = document.getElementById('accountsList');
+        if (!d.accounts.length) {
+            list.innerHTML = '<div class="empty"><i class="fas fa-users"></i>No accounts</div>';
+            return;
+        }
+        list.innerHTML = d.accounts.map(a => `
+            <div class="card" style="margin-bottom:10px;padding:14px 16px">
+                <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+                    <div style="min-width:0;flex:1">
+                        <div style="color:#fff;font-weight:700;font-size:13px;word-break:break-all">
+                            ${escapeHtml(a.email)}
+                            ${a.isAdmin ? '<span style="font-size:9px;padding:2px 8px;border-radius:10px;background:linear-gradient(135deg,var(--g1),var(--g2));color:#000;font-weight:800;margin-left:6px">ADMIN</span>' : ''}
+                            ${a.isBanned ? '<span style="font-size:9px;padding:2px 8px;border-radius:10px;background:rgba(255,82,82,.15);color:#ff9999;border:1px solid rgba(255,82,82,.4);margin-left:6px">BANNED</span>' : ''}
+                        </div>
+                        <div style="color:var(--muted);font-size:11px;margin-top:3px">
+                            ${escapeHtml(a.name || 'No name')} · Credits: ${a.credits} · Max: ${a.maxSessions}
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap">
+                        <button class="btn btn-ghost btn-sm" data-act="credits" data-id="${a._id}">Credits</button>
+                        <button class="btn btn-ghost btn-sm" data-act="ban" data-id="${a._id}">${a.isBanned ? 'Unban' : 'Ban'}</button>
+                        <button class="btn btn-ghost btn-sm" data-act="delete" data-id="${a._id}" style="border-color:rgba(255,82,82,.4);color:#ff9999">Delete</button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    } catch (e) {
+        showErr(e.message);
+    }
+}
+
+document.getElementById('searchBtn').onclick = () => loadAccounts(document.getElementById('accountSearch').value);
+document.getElementById('accountSearch').addEventListener('keydown', e => {
+    if (e.key === 'Enter') loadAccounts(document.getElementById('accountSearch').value);
+});
+
+document.getElementById('accountsList').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    const act = btn.dataset.act;
+    if (act === 'credits') {
+        const v = prompt('New credit amount:');
+        if (v === null) return;
+        const n = parseInt(v, 10);
+        if (isNaN(n)) return showErr('Invalid number');
+        await api('/api/admin/accounts/' + id, { method: 'POST', body: JSON.stringify({ credits: n }) });
+        toast('Credits updated');
+        loadAccounts(document.getElementById('accountSearch').value);
+    }
+    if (act === 'ban') {
+        const acc = await api('/api/admin/accounts/' + id);
+        await api('/api/admin/accounts/' + id, { method: 'POST', body: JSON.stringify({ isBanned: !acc.account.isBanned }) });
+        toast('Toggled ban');
+        loadAccounts(document.getElementById('accountSearch').value);
+    }
+    if (act === 'delete') {
+        if (!confirm('Delete this account?')) return;
+        await api('/api/admin/accounts/' + id, { method: 'DELETE' });
+        toast('Deleted');
+        loadAccounts(document.getElementById('accountSearch').value);
+    }
+});
+
+// ---- SESSIONS ----
+async function loadSessions() {
+    try {
+        const d = await api('/api/admin/sessions');
+        const list = document.getElementById('sessionsList');
+        if (!d.sessions.length) {
+            list.innerHTML = '<div class="empty"><i class="fas fa-server"></i>No sessions running</div>';
+            return;
+        }
+        list.innerHTML = d.sessions.map(s => `
+            <div class="card" style="margin-bottom:10px;padding:14px 16px">
+                <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+                    <div style="min-width:0;flex:1">
+                        <div style="color:#fff;font-weight:700;font-size:13px">
+                            ${s.phone ? '+' + s.phone : escapeHtml(s.sessionId)}
+                            <span style="font-size:9px;padding:2px 8px;border-radius:10px;margin-left:6px;${s.connected ? 'background:rgba(0,229,160,.15);color:#00e5a0;border:1px solid rgba(0,229,160,.4)' : (s.ready ? 'background:rgba(255,204,102,.15);color:#ffcc66;border:1px solid rgba(255,204,102,.4)' : 'background:rgba(255,82,82,.15);color:#ff9999;border:1px solid rgba(255,82,82,.4)')}">
+                                ${s.connected ? 'ONLINE' : (s.ready ? 'CONNECTING' : 'OFFLINE')}
+                            </span>
+                        </div>
+                        <div style="color:var(--muted);font-size:11px;margin-top:3px;word-break:break-all">
+                            ID: ${escapeHtml(s.sessionId)}<br>Started: ${new Date(s.startedAt).toLocaleString()}
+                        </div>
+                    </div>
+                    <button class="btn btn-ghost btn-sm" data-sess="${escapeAttr(s.sessionId)}" style="border-color:rgba(255,82,82,.4);color:#ff9999">
+                        <i class="fas fa-skull"></i> Kill
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    } catch (e) {
+        showErr(e.message);
+    }
+}
+
+document.getElementById('sessionsList').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-sess]');
+    if (!btn) return;
+    if (!confirm('Force-logout this session?')) return;
+    try {
+        await api('/api/admin/sessions/' + encodeURIComponent(btn.dataset.sess), { method: 'DELETE' });
+        toast('Session killed');
+        loadSessions();
+    } catch (err) {
+        showErr(err.message);
+    }
+});
+
+document.getElementById('refreshSessionsBtn').onclick = loadSessions;
+
+// ---- BROADCAST ----
+document.getElementById('broadcastBtn').onclick = async () => {
+    const text = document.getElementById('broadcastText').value.trim();
+    if (!text) return showErr('Write something');
+    if (!confirm('Send this broadcast to all sessions?')) return;
+    const btn = document.getElementById('broadcastBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="skeleton"></span> Sending…';
+    try {
+        const r = await api('/api/admin/broadcast', { method: 'POST', body: JSON.stringify({ text }) });
+        toast(`Sent: ${r.sent} · Failed: ${r.failed}`);
+        document.getElementById('broadcastText').value = '';
+    } catch (e) {
+        showErr(e.message);
+    }
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-paper-plane"></i> Send Broadcast';
+};
+
+loadOverview();
+setInterval(loadOverview, 15000);
+</script>
+</body>
+</html>
