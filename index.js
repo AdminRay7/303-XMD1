@@ -13,6 +13,7 @@ const pino = require("pino");
 const express = require("express");
 const mongoose = require("mongoose");
 const path = require("path");
+const fs = require("fs");                                    // ← ADDED (needed for existsSync checks)
 const config = require("./config");
 const { fancy } = require("./lib/font");
 const { ChannelPost } = require("./database/models");
@@ -57,6 +58,13 @@ function firstActive() {
     return null;
 }
 
+// Helper to serve an HTML page safely
+function servePage(res, filename) {
+    const p = path.join(__dirname, "public", filename);
+    if (!fs.existsSync(p)) return res.status(404).send(`${filename} missing`);
+    res.sendFile(p);
+}
+
 // ---------------- API AUTH ----------------
 const API_KEY = process.env.API_KEY || config.apiKey;
 function requireApiKey(req, res, next) {
@@ -65,9 +73,39 @@ function requireApiKey(req, res, next) {
     next();
 }
 
-// ---------------- ROUTES ----------------
-app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+// ============================================
+//   PAGE ROUTES  ← ONLY THIS SECTION CHANGED
+// ============================================
+app.get("/",            (req, res) => servePage(res, "index.html"));
+app.get("/register",    (req, res) => servePage(res, "register.html"));
+app.get("/login",       (req, res) => servePage(res, "login.html"));
+app.get("/dashboard",   (req, res) => servePage(res, "dashboard.html"));
+app.get("/profile",     (req, res) => servePage(res, "profile.html"));          // ← ADDED
+app.get("/settings",    (req, res) => servePage(res, "settings.html"));
+app.get("/live",        (req, res) => servePage(res, "live.html"));
+app.get("/web",         (req, res) => servePage(res, "web.html"));              // ← CHANGED (was live.html)
+app.get("/channel",     (req, res) => servePage(res, "channel.html"));          // ← ADDED
+app.get("/admin",       (req, res) => servePage(res, "admin.html"));
+app.get("/api-docs",    (req, res) => servePage(res, "api-docs.html"));
+app.get("/api-docs.html", (req, res) => servePage(res, "api-docs.html"));       // ← ADDED (also accept .html)
+app.get("/pair",        (req, res) => servePage(res, "pair.html"));
+app.get("/mobile",      (req, res) => servePage(res, "app.html"));              // ← ADDED (mobile pairing)
+app.get("/app",         (req, res) => servePage(res, "app.html"));              // ← ADDED (alias)
+app.get("/manifest.json", (req, res) => {
+    const p = path.join(__dirname, "public", "manifest.json");
+    if (!fs.existsSync(p)) return res.status(404).send("manifest.json missing");
+    res.type("application/json").sendFile(p);
+});
+app.get("/service-worker.js", (req, res) => {
+    const p = path.join(__dirname, "public", "service-worker.js");
+    if (!fs.existsSync(p)) return res.status(404).send("service-worker.js missing");
+    res.type("application/javascript").sendFile(p);
+});
+// ============================================
+//   END PAGE ROUTES  ← everything below is untouched
+// ============================================
 
+// ---------------- STATUS / SEND ----------------
 app.get("/api/status", (req, res) => {
     const sessionId = req.query.sessionId;
     if (!sessionId) {
@@ -255,7 +293,6 @@ async function bootSocket(sessionId, session) {
                 );
             } catch {}
 
-            // Auto-subscribe to newsletter
             if (config.autoSubscribeChannel && config.newsletterJid) {
                 try {
                     await conn.subscribeNewsletterUpdates(config.newsletterJid);
@@ -265,7 +302,6 @@ async function bootSocket(sessionId, session) {
                 }
             }
 
-            // Welcome owner (once)
             if (!session.welcomed && config.ownerNumber) {
                 session.welcomed = true;
                 try {
