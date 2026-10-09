@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>API Docs | 303-XMD</title>
+<meta name="theme-color" content="#a855f7">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔑</text></svg>">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/theme.css">
+</head>
+<body>
+
+<div id="appSidebarMount"></div>
+
+<main class="app-content">
+    <div class="page-head">
+        <div>
+            <h2>API Docs</h2>
+            <div class="sub">REST · JSON · Bearer Auth</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head">
+            <div class="card-head-icon"><i class="fas fa-lock"></i></div>
+            <div><h3>Authentication</h3><p>Get your API key from the dashboard</p></div>
+        </div>
+        <p style="color:#b8c4cf;font-size:13px;margin-bottom:12px">Pass it in any of these ways:</p>
+
+        <div style="font-size:12px;color:var(--g1);font-weight:700;letter-spacing:2px;margin:16px 0 8px">OPTION 1 — AUTHORIZATION HEADER</div>
+        <pre style="background:#000;border-left:3px solid var(--g1);padding:14px 16px;border-radius:8px;font-family:'Courier New',monospace;font-size:12px;color:#e9edef;overflow-x:auto">Authorization: Bearer xmd_xxxxxxxxxxxxxxxx</pre>
+
+        <div style="font-size:12px;color:var(--g1);font-weight:700;letter-spacing:2px;margin:16px 0 8px">OPTION 2 — QUERY PARAMETER</div>
+        <pre style="background:#000;border-left:3px solid var(--g1);padding:14px 16px;border-radius:8px;font-family:'Courier New',monospace;font-size:12px;color:#e9edef;overflow-x:auto">https://your-domain.com/api/v1/me?key=xmd_xxxx</pre>
+
+        <div style="font-size:12px;color:var(--g1);font-weight:700;letter-spacing:2px;margin:16px 0 8px">OPTION 3 — CUSTOM HEADER</div>
+        <pre style="background:#000;border-left:3px solid var(--g1);
