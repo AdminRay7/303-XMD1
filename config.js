@@ -27,7 +27,7 @@ module.exports = {
     description: "The Last Key",
 
     sessionId:   str(process.env.SESSION_ID,   ""),
-    apiKey:      str(process.env.API_KEY,      "change-this-key"),
+    apiKey:      str(process.env.API_KEY,      "303xmd_k9Xp2mQz7LvN4rT8wYbH6jF3sD1cA5eG"),
     port:        num(process.env.PORT,         3000),
 
     mongodb: str(process.env.MONGODB_URI,
