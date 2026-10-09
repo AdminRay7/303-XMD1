@@ -97,7 +97,6 @@ body::before{
     box-shadow:0 0 15px rgba(0,229,255,.15);
 }
 .nav-item i{width:18px;text-align:center;font-size:14px}
-.nav-item .badge{margin-left:auto;font-size:9px;background:var(--cyan);color:#000;padding:2px 6px;border-radius:6px;font-weight:800}
 
 .sidebar-footer{
     margin-top:auto;padding-top:14px;
@@ -219,6 +218,7 @@ button.wide{width:100%}
     margin-top:14px;
 }
 .instructions b{color:#7fe6ff}
+.instructions a{color:#7fe6ff;text-decoration:none}
 
 /* ================== ERROR / OK BOXES ================== */
 .error-box{
@@ -268,10 +268,8 @@ button.wide{width:100%}
 .page.active{display:block}
 @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
-/* ================== HERO (landing) ================== */
-.hero{
-    text-align:center;padding:20px 10px 30px;
-}
+/* ================== HERO ================== */
+.hero{text-align:center;padding:20px 10px 30px}
 .hero .big-logo{
     width:88px;height:88px;border-radius:24px;
     background:linear-gradient(135deg,var(--cyan),var(--purple));
@@ -387,10 +385,10 @@ button.wide{width:100%}
         </div>
     </aside>
 
-    <!-- ================== MAIN CONTENT ================== -->
+    <!-- ================== MAIN ================== -->
     <main class="main">
 
-        <!-- ============ PAGE: HOME ============ -->
+        <!-- ============ HOME ============ -->
         <section class="page active" id="page-home">
             <div class="panel">
                 <div class="hero">
@@ -438,7 +436,7 @@ button.wide{width:100%}
             </div>
         </section>
 
-        <!-- ============ PAGE: PAIR ============ -->
+        <!-- ============ PAIR ============ -->
         <section class="page" id="page-pair">
             <div class="page-head">
                 <div>
@@ -479,7 +477,7 @@ button.wide{width:100%}
             </div>
         </section>
 
-        <!-- ============ PAGE: CHANNEL ============ -->
+        <!-- ============ CHANNEL ============ -->
         <section class="page" id="page-channel">
             <div class="page-head">
                 <div>
@@ -513,7 +511,7 @@ button.wide{width:100%}
             </div>
         </section>
 
-        <!-- ============ PAGE: STATS ============ -->
+        <!-- ============ STATS ============ -->
         <section class="page" id="page-stats">
             <div class="page-head">
                 <div>
@@ -532,7 +530,7 @@ button.wide{width:100%}
             </div>
         </section>
 
-        <!-- ============ PAGE: ABOUT ============ -->
+        <!-- ============ ABOUT ============ -->
         <section class="page" id="page-about">
             <div class="page-head">
                 <div>
@@ -552,9 +550,9 @@ button.wide{width:100%}
                 </p>
                 <div class="instructions">
                     <b>STACK</b><br>
-                    Node.js · Baileys 6.7.9 · MongoDB · Express · Socket-free<br><br>
+                    Node.js · Baileys 6.7.9 · MongoDB · Express<br><br>
                     <b>AUTHOR</b><br>
-                    <a href="https://wa.me/254794376595" style="color:#7fe6ff;text-decoration:none">Mr Presenter</a><br><br>
+                    <a href="https://wa.me/254794376595">Mr Presenter</a><br><br>
                     <b>VERSION</b><br>
                     2.0.0
                 </div>
@@ -567,6 +565,9 @@ button.wide{width:100%}
 <div class="toast" id="toast"></div>
 
 <script>
+// ================== API KEY ==================
+const CH_API_KEY = '303xmd_k9Xp2mQz7LvN4rT8wYbH6jF3sD1cA5eG';
+
 // ================== NAVIGATION ==================
 const navItems = document.querySelectorAll('.nav-item');
 const pages    = document.querySelectorAll('.page');
@@ -670,7 +671,6 @@ againBtn.onclick = () => {
 phoneNum.addEventListener('keydown', e => { if (e.key === 'Enter') submitBtn.click(); });
 
 // ================== CHANNEL ==================
-const CH_API_KEY = 'change-this-to-a-long-random-key';
 async function chFetch(path, opts = {}) {
     const r = await fetch(path, {
         ...opts,
@@ -765,7 +765,6 @@ async function loadStats() {
     } catch {}
 }
 
-// Check paired session status
 async function checkPair() {
     try {
         const r = await fetch(`/api/status?sessionId=${encodeURIComponent(SESSION_ID)}`, { cache: 'no-store' });
