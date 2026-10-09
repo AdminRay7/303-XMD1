@@ -1,0 +1,85 @@
+/* ============================================================
+   303-XMD — Integrate WhatsApp chat UI with global app sidebar
+   Appended to the bottom of web.css
+   ============================================================ */
+
+/* When sidebar + theme.css are present, layout is 3-column:
+   [app sidebar] [chat list] [chat pane] */
+body.theme-web,
+body.theme-live{
+    background: var(--bg) !important;
+    color: var(--text);
+    display: flex;
+    flex-direction: row !important;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Push wa-header off the mobile hamburger */
+body.theme-web .wa-header,
+body.theme-live .wa-header{
+    padding-left: 14px;
+}
+@media (max-width: 900px){
+    body.theme-web .wa-header,
+    body.theme-live .wa-header{
+        padding-left: 64px;
+    }
+}
+
+/* The chat-pane must be able to shrink inside the app-content flow */
+body.theme-web .wa-layout,
+body.theme-live .wa-layout{
+    flex: 1;
+    min-width: 0;
+}
+
+/* Sidebar (chat-list) gets a themed accent */
+body.theme-web .sidebar,
+body.theme-live .sidebar{
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+}
+body.theme-web .wa-header,
+body.theme-live .wa-header{
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+}
+
+/* Send button uses page accent */
+body.theme-web .send-btn,
+body.theme-live .send-btn{
+    background: linear-gradient(135deg, var(--g1), var(--g2));
+    color: #000;
+    box-shadow: 0 4px 16px var(--glow);
+}
+body.theme-web .send-btn:hover,
+body.theme-live .send-btn:hover{
+    filter: brightness(1.15);
+    background: linear-gradient(135deg, var(--g1), var(--g2));
+}
+
+/* Active chat row uses gradient */
+body.theme-web .chat-item.active,
+body.theme-live .chat-item.active{
+    background: linear-gradient(135deg,
+        rgba(255,255,255,.06),
+        rgba(255,255,255,.02));
+    border-left: 3px solid var(--g1);
+    padding-left: 11px;
+}
+
+/* Sent bubble uses theme accent */
+body.theme-web .bubble.sent,
+body.theme-live .bubble.sent{
+    background: linear-gradient(135deg, var(--g1), var(--g2));
+    color: #000;
+}
+body.theme-web .bubble.sent .text,
+body.theme-live .bubble.sent .text{ color: #000; }
+body.theme-web .bubble.sent .meta,
+body.theme-live .bubble.sent .meta{ color: rgba(0,0,0,.6); }
+body.theme-web .bubble.sent::after,
+body.theme-live .bubble.sent::after{
+    border-color: var(--g2) transparent transparent transparent;
+}
