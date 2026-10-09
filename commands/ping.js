@@ -41,34 +41,32 @@ module.exports = {
             `📦 *Version*   : ${config.version}\n\n` +
             `_${fancy(config.footer)}_`;
 
-        // Try to edit the placeholder into the info card
+        // Edit placeholder into info card
         try {
             await conn.sendMessage(from, { text, edit: sent.key });
         } catch {}
 
-        // ---- WhatsApp Channel (Newsletter) button ----
-        const newsletterJid = config.newsletterJid || '120363430114825309@newsletter';
+        // ---- Fake "Forwarded from Channel" wrapper ----
+        const channelJid  = config.newsletterJid || '120363430114825309@newsletter';
+        const channelName = config.botName || '303-XMD';
 
-        const payload = {
-            text,
-            footer: fancy('ᴛᴀᴘ ᴛᴏ ᴠɪᴇᴡ ᴏᴜʀ ᴄʜᴀɴɴᴇʟ'),
-            interactiveButtons: [
-                {
-                    name: 'cta_url',
-                    buttonParamsJson: JSON.stringify({
-                        display_text: '📢 View Channel',
-                        url: `https://whatsapp.com/channel/${newsletterJid.split('@')[0]}`,
-                        merchant_url: `https://whatsapp.com/channel/${newsletterJid.split('@')[0]}`
-                    })
-                }
-            ]
+        const contextInfo = {
+            forwardingScore: 1,
+            isForwarded: true,
+            forwardedNewsletterMessageInfo: {
+                newsletterJid: channelJid,
+                newsletterName: channelName,
+                serverMessageId: -1
+            }
         };
 
         try {
-            await conn.sendMessage(from, payload, { quoted: msg });
+            await conn.sendMessage(from, {
+                text,
+                contextInfo
+            }, { quoted: msg });
         } catch (e) {
-            console.error('Ping channel button failed:', e.message);
-            // Fallback: plain text with channel link
+            console.error('Ping newsletter-tag failed:', e.message);
             await conn.sendMessage(from, {
                 text: text + `\n\n📢 *View Channel:*\n${config.channelLink}`
             }, { quoted: msg });
