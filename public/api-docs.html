@@ -36,4 +36,105 @@
         <pre style="background:#000;border-left:3px solid var(--g1);padding:14px 16px;border-radius:8px;font-family:'Courier New',monospace;font-size:12px;color:#e9edef;overflow-x:auto">https://your-domain.com/api/v1/me?key=xmd_xxxx</pre>
 
         <div style="font-size:12px;color:var(--g1);font-weight:700;letter-spacing:2px;margin:16px 0 8px">OPTION 3 — CUSTOM HEADER</div>
-        <pre style="background:#000;border-left:3px solid var(--g1);
+        <pre style="background:#000;border-left:3px solid var(--g1);padding:14px 16px;border-radius:8px;font-family:'Courier New',monospace;font-size:12px;color:#e9edef;overflow-x:auto">x-api-key: xmd_xxxxxxxxxxxxxxxx</pre>
+    </div>
+
+    <div class="card">
+        <div class="card-head">
+            <div class="card-head-icon"><i class="fas fa-rocket"></i></div>
+            <div><h3>Quick Start</h3><p>Send your first message</p></div>
+        </div>
+        <pre style="background:#000;border-left:3px solid var(--g1);padding:14px 16px;border-radius:8px;font-family:'Courier New',monospace;font-size:12px;color:#e9edef;overflow-x:auto">curl -X POST https://your-domain.com/api/v1/send \
+  -H "Authorization: Bearer xmd_xxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sessionId": "sess_abc123",
+    "to": "254712345678",
+    "text": "Hello from the API"
+  }'</pre>
+    </div>
+
+    <div class="card">
+        <div class="card-head">
+            <div class="card-head-icon"><i class="fas fa-user"></i></div>
+            <div><h3>Your Endpoints</h3><p>Operate on your own data</p></div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;gap:8px;padding:11px 14px;background:rgba(255,255,255,.03);border-radius:10px;align-items:center;font-family:'Courier New',monospace;font-size:12.5px">
+                <span style="background:rgba(83,189,235,.15);color:#53bdeb;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:800">GET</span>
+                <span>/api/v1/me</span>
+            </div>
+            <div style="display:flex;gap:8px;padding:11px 14px;background:rgba(255,255,255,.03);border-radius:10px;align-items:center;font-family:'Courier New',monospace;font-size:12.5px">
+                <span style="background:rgba(83,189,235,.15);color:#53bdeb;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:800">GET</span>
+                <span>/api/v1/sessions</span>
+            </div>
+            <div style="display:flex;gap:8px;padding:11px 14px;background:rgba(255,255,255,.03);border-radius:10px;align-items:center;font-family:'Courier New',monospace;font-size:12.5px">
+                <span style="background:rgba(0,229,160,.15);color:#00e5a0;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:800">POST</span>
+                <span>/api/v1/send</span>
+            </div>
+            <div style="display:flex;gap:8px;padding:11px 14px;background:rgba(255,255,255,.03);border-radius:10px;align-items:center;font-family:'Courier New',monospace;font-size:12.5px">
+                <span style="background:rgba(0,229,160,.15);color:#00e5a0;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:800">POST</span>
+                <span>/api/v1/send-media</span>
+            </div>
+            <div style="display:flex;gap:8px;padding:11px 14px;background:rgba(255,255,255,.03);border-radius:10px;align-items:center;font-family:'Courier New',monospace;font-size:12.5px">
+                <span style="background:rgba(83,189,235,.15);color:#53bdeb;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:800">GET</span>
+                <span>/api/v1/stats</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head">
+            <div class="card-head-icon"><i class="fas fa-crown"></i></div>
+            <div><h3>Admin Endpoints</h3><p>Requires admin email</p></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;gap:8px;padding:11px 14px;background:rgba(255,255,255,.03);border-radius:10px;align-items:center;font-family:'Courier New',monospace;font-size:12.5px">
+                <span style="background:rgba(83,189,235,.15);color:#53bdeb;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:800">GET</span>
+                <span>/api/v1/admin/sessions</span>
+            </div>
+            <div style="display:flex;gap:8px;padding:11px 14px;background:rgba(255,255,255,.03);border-radius:10px;align-items:center;font-family:'Courier New',monospace;font-size:12.5px">
+                <span style="background:rgba(83,189,235,.15);color:#53bdeb;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:800">GET</span>
+                <span>/api/v1/admin/accounts</span>
+            </div>
+            <div style="display:flex;gap:8px;padding:11px 14px;background:rgba(255,255,255,.03);border-radius:10px;align-items:center;font-family:'Courier New',monospace;font-size:12.5px">
+                <span style="background:rgba(0,229,160,.15);color:#00e5a0;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:800">POST</span>
+                <span>/api/v1/admin/send</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head">
+            <div class="card-head-icon"><i class="fas fa-triangle-exclamation"></i></div>
+            <div><h3>Errors</h3><p>All errors return <code style="color:var(--g1);font-size:11px">{"error": "..."}</code></p></div>
+        </div>
+        <pre style="background:#000;border-left:3px solid #ff5252;padding:14px 16px;border-radius:8px;font-family:'Courier New',monospace;font-size:12px;color:#e9edef;overflow-x:auto">// 401 — invalid key
+{ "error": "Invalid or revoked API key" }
+
+// 403 — banned or admin-only
+{ "error": "Account is banned" }
+
+// 429 — rate limited
+{ "error": "Rate limit exceeded" }</pre>
+    </div>
+</main>
+
+<script src="/sidebar.js"></script>
+<script>
+// Click any <pre> to copy
+document.querySelectorAll('pre').forEach(pre => {
+    pre.style.cursor = 'pointer';
+    pre.title = 'Click to copy';
+    pre.addEventListener('click', () => {
+        navigator.clipboard.writeText(pre.innerText).then(() => {
+            const prev = pre.style.borderLeftColor;
+            pre.style.borderLeftColor = '#00e5a0';
+            setTimeout(() => { pre.style.borderLeftColor = prev || 'var(--g1)'; }, 400);
+        }).catch(() => {});
+    });
+});
+</script>
+</body>
+</html>
