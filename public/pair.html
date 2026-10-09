@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Pair Device | 303-XMD</title>
+<meta name="theme-color" content="#00e5a0">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔗</text></svg>">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/theme.css">
+</head>
+<body>
+
+<div id="appSidebarMount"></div>
+
+<main class="app-content">
+    <div class="page-head">
+        <div>
+            <h2>Pair Device</h2>
+            <div class="sub">Link a new WhatsApp number</div>
+        </div>
+        <div class="status-pill off" id="pairStatus">
+            <span class="dot"></span>
+            <span id="pairStatusText">Not paired</span>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head">
+            <div class="card-head-icon"><i class="fas fa-key"></i></div>
+            <div>
+                <h3>Generate Pairing Code</h3>
+                <p>Enter phone number with country code</p>
+            </div>
+        </div>
+
+        <div id="step1">
+            <label class="field-label">WhatsApp Number</label>
+            <input class="input center" type="tel" id="phoneNum" placeholder="254712345678" inputmode="numeric" autocomplete="off" maxlength="15">
+            <button class="btn btn-primary btn-block" id="submitBtn">
+                <i class="fas fa-key"></i> Generate Pairing Code
+            </button>
+            <div class="error" id="err"></div>
+        </div>
+
+        <div id="step2" style="display:none">
+            <p style="color:var(--ok);text-align:center;font-size:12px;letter-spacing:2px;font-weight:700">
+                <i class="fas fa-check-circle"></i> CODE READY
+            </p>
+            <div class="code-box" id="codeDisplay">----</div>
+            <div style="background:rgba(255,255,255,.03);border-left:3px solid var(--g1);padding:14px 16px;border-radius:10px;font-size:13px;color:#b8c4cf;line-height:1.75">
+                <b style="color:var(--g1)">HOW TO PAIR:</b><br>
+                1. Open WhatsApp on your phone.<br>
+                2. Go to <b>Linked Devices</b>.<br>
+                3. Tap <b>Link with Phone Number</b>.<br>
+                4. Enter the 8-digit code above.
+            </div>
+            <div class="btn-row">
+                <button class="btn btn-primary" id="copyBtn"><i class="fas fa-copy"></i> Copy</button>
+                <button class="btn btn-ghost" id="againBtn"><i class="fas fa-redo"></i> Again</button>
+            </div>
+        </div>
+    </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/sidebar.js"></script>
+<script>
+const token = localStorage.getItem('token');
+if (!token) location.href = '/login';
+
+const toastEl = document.getElementById('toast');
+function showToast(msg, err = false) {
+    toastEl.textContent = msg;
+    toastEl.classList.toggle('err', err);
+    toastEl.classList.add('show');
+    setTimeout(() => toastEl.classList.remove('show'), 2400);
+}
+
+function freshSessionId() {
+    return 'sess_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+
+const submitBtn = document.getElementById('submitBtn');
+const phoneNum  = document.getElementById('phoneNum');
+const step1     = document.getElementById('step1');
+const step2     = document.getElementById('step2');
+const codeBox   = document.getElementById('codeDisplay');
+const errBox    = document.getElementById('err');
+const copyBtn   = document.getElementById('copyBtn');
+const againBtn  = document.getElementById('againBtn');
+
+submitBtn.onclick = async () => {
+    errBox.classList.remove('show');
+    const num = phoneNum.value.replace(/\D/g, '');
+    if (num.length < 10 || num.length > 15) {
+        errBox.innerText = 'Enter full number with country code (10–15 digits)';
+        errBox.classList.add('show');
+        return;
+    }
+    const sessionId = freshSessionId();
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="skeleton"></span> Generating…';
+    try {
+        const r = await fetch(`/api/pair?sessionId=${encodeURIComponent(sessionId)}&num=${encodeURIComponent(num)}`, {
+            cache: 'no-store',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await r.json();
+        if (!r.ok || data.error) throw new Error(data.error || 'Pairing failed');
+        if (!data.code) throw new Error('No code returned');
+        step1.style.display = 'none';
+        step2.style.display = 'block';
+        codeBox.innerText = data.code;
+        showToast('Code generated!');
+    } catch (e) {
+        errBox.innerText = e.message;
+        errBox.classList.add('show');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="fas fa-key"></i> Generate Pairing Code';
+    }
+};
+
+function copyCode() {
+    const code = codeBox.innerText.replace(/-/g, '').trim();
+    if (!code || code === '----') return;
+    navigator.clipboard.writeText(code).then(() => showToast('Copied!')).catch(() => {});
+}
+codeBox.onclick = copyCode;
+copyBtn.onclick = copyCode;
+
+againBtn.onclick = () => {
+    step2.style.display = 'none';
+    step1.style.display = 'block';
+    phoneNum.value = '';
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = '<i class="fas fa-key"></i> Generate Pairing Code';
+    errBox.classList.remove('show');
+    phoneNum.focus();
+};
+
+phoneNum.addEventListener('keydown', e => { if (e.key === 'Enter') submitBtn.click(); });
+phoneNum.focus();
+</script>
+</body>
+</html>
