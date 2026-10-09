@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Profile | 303-XMD</title>
+<meta name="theme-color" content="#3b82f6">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👤</text></svg>">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/theme.css">
+<style>
+body.theme-profile{
+    --g1:#3b82f6;
+    --g2:#8b5cf6;
+    --glow:rgba(59,130,246,.4);
+    --bg:#000814;
+    --bg2:#0f1d3a;
+}
+
+/* ---- Profile hero ---- */
+.profile-hero{
+    display:flex;align-items:center;gap:20px;
+    padding:26px 22px;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:20px;
+    position:relative;
+    overflow:hidden;
+    margin-bottom:20px;
+}
+.profile-hero::before{
+    content:'';position:absolute;top:0;left:0;right:0;height:3px;
+    background:linear-gradient(90deg,var(--g1),var(--g2));
+    box-shadow:0 0 24px var(--glow);
+}
+.profile-avatar{
+    width:88px;height:88px;
+    border-radius:24px;
+    background:linear-gradient(135deg,var(--g1),var(--g2));
+    display:flex;align-items:center;justify-content:center;
+    color:#000;font-weight:800;font-size:36px;
+    box-shadow:0 8px 32px var(--glow);
+    flex-shrink:0;
+}
+.profile-info{flex:1;min-width:0}
+.profile-name{
+    font-size:22px;font-weight:800;color:#fff;
+    letter-spacing:1px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.profile-email{
+    font-size:13px;color:var(--muted);
+    margin-top:4px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.profile-badges{
+    display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;
+}
+.badge{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:5px 12px;
+    border-radius:20px;
+    font-size:10px;font-weight:800;
+    letter-spacing:1px;text-transform:uppercase;
+    border:1px solid transparent;
+}
+.badge-admin{
+    background:linear-gradient(135deg,var(--g1),var(--g2));
+    color:#000;
+}
+.badge-user{
+    background:rgba(255,255,255,.06);
+    color:var(--text);
+    border-color:var(--border);
+}
+.badge-active{
+    background:rgba(0,229,160,.1);
+    color:var(--ok);
+    border-color:rgba(0,229,160,.35);
+}
+
+/* ---- Stats ---- */
+.profile-stats{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+    gap:12px;
+    margin-bottom:20px;
+}
+.profile-stat{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:18px;
+    text-align:center;
+    position:relative;
+    overflow:hidden;
+}
+.profile-stat::before{
+    content:'';position:absolute;
+    top:0;left:20%;right:20%;height:2px;
+    background:linear-gradient(90deg,transparent,var(--g1),transparent);
+    opacity:.6;
+}
+.profile-stat .val{
+    font-size:26px;font-weight:800;
+    background:linear-gradient(135deg,var(--g1),var(--g2));
+    -webkit-background-clip:text;background-clip:text;
+    color:transparent;
+}
+.profile-stat .lbl{
+    font-size:10px;letter-spacing:2px;
+    color:var(--muted);text-transform:uppercase;
+    margin-top:6px;
+}
+
+/* ---- Info rows ---- */
+.info-row{
+    display:flex;justify-content:space-between;align-items:flex-start;
+    gap:14px;
+    padding:12px 0;
+    border-bottom:1px solid var(--border);
+    font-size:13px;
+}
+.info-row:last-child{border-bottom:none}
+.info-row .lbl{color:var(--muted);flex-shrink:0}
+.info-row .val{
+    color:var(--text);text-align:right;
+    word-break:break-all;
+    font-weight:600;
+}
+.info-row .val.mono{
+    font-family:'Courier New',monospace;
+    font-size:12px;
+    color:#b8c4cf;
+}
+
+/* ---- Session mini-list ---- */
+.mini-session{
+    display:flex;justify-content:space-between;
+    align-items:center;gap:10px;
+    padding:11px 14px;
+    background:rgba(255,255,255,.03);
+    border:1px solid var(--border);
+    border-radius:12px;
+    margin-bottom:8px;
+    font-size:12.5px;
+}
+.mini-session .phone{
+    color:#fff;font-weight:700;
+    word-break:break-all;
+}
+.mini-session .status{
+    font-size:10px;font-weight:800;
+    padding:3px 9px;border-radius:20px;
+    letter-spacing:1px;
+    flex-shrink:0;
+}
+.mini-session .status.on{
+    background:rgba(0,229,160,.12);
+    color:var(--ok);
+    border:1px solid rgba(0,229,160,.4);
+}
+.mini-session .status.off{
+    background:rgba(255,82,82,.12);
+    color:#ff9999;
+    border:1px solid rgba(255,82,82,.4);
+}
+.mini-session .status.connecting{
+    background:rgba(255,179,71,.12);
+    color:#ffb347;
+    border:1px solid rgba(255,179,71,.4);
+}
+
+@media (max-width:600px){
+    .profile-hero{flex-direction:column;text-align:center}
+    .profile-info{text-align:center;width:100%}
+    .profile-badges{justify-content:center}
+    .info-row{flex-direction:column;gap:4px;align-items:flex-start}
+    .info-row .val{text-align:left;width:100%}
+}
+</style>
+</head>
+<body class="theme-profile">
+
+<div id="appSidebarMount"></div>
+
+<main class="app-content">
+    <div class="page-head">
+        <div>
+            <h2>Profile</h2>
+            <div class="sub">Your account overview</div>
+        </div>
+    </div>
+
+    <!-- ============ PROFILE HERO ============ -->
+    <div class="profile-hero">
+        <div class="profile-avatar" id="avatar">—</div>
+        <div class="profile-info">
+            <div class="profile-name" id="name">Loading…</div>
+            <div class="profile-email" id="email">—</div>
+            <div class="profile-badges" id="badges">
+                <span class="badge badge-user">User</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ STATS ============ -->
+    <div class="profile-stats">
+        <div class="profile-stat"><div class="val" id="statSessions">0</div><div class="lbl">Sessions</div></div>
+        <div class="profile-stat"><div class="val" id="statMessages">0</div><div class="lbl">Messages</div></div>
+        <div class="profile-stat"><div class="val" id="statCredits">0</div><div class="lbl">Credits</div></div>
+        <div class="profile-stat"><div class="val" id="statMax">0</div><div class="lbl">Max Slots</div></div>
+    </div>
+
+    <!-- ============ EDIT NAME ============ -->
+    <div class="card">
+        <div class="card-head">
+            <div class="card-head-icon"><i class="fas fa-user-pen"></i></div>
+            <div>
+                <h3>Edit Profile</h3>
+                <p>Update your display name</p>
+            </div>
+        </div>
+        <label class="field-label">Full Name</label>
+        <input class="input" type="text" id="editName" placeholder="Your name" maxlength="60">
+        <button class="btn btn-primary btn-block" id="saveNameBtn">
+            <i class="fas fa-save"></i> Save Name
+        </button>
+        <div class="error" id="nameErr"></div>
+        <div class="ok" id="nameOk"></div>
+    </div>
+
+    <!-- ============ CHANGE PASSWORD ============ -->
+    <div class="card">
+        <div class="card-head">
+            <div class="card-head-icon"><i class="fas fa-lock"></i></div>
+            <div>
+                <h3>Change Password</h3>
+                <p>Keep your account secure</p>
+            </div>
+        </div>
+        <label class="field-label">Old Password</label>
+        <input class="input" type="password" id="oldPassword" placeholder="Current password" autocomplete="current-password">
+
+        <label class="field-label">New Password</label>
+        <input class="input" type="password" id="newPassword" placeholder="At least 6 characters" autocomplete="new-password">
+
+        <button class="btn btn-primary btn-block" id="changePassBtn">
+            <i class="fas fa-key"></i> Update Password
+        </button>
+        <div class="error" id="passErr"></div>
+        <div class="ok" id="passOk"></div>
+    </div>
+
+    <!-- ============ SESSIONS SUMMARY ============ -->
+    <div class="card">
+        <div class="card-head">
+            <div class="card-head-icon"><i class="fas fa-mobile-screen"></i></div>
+            <div>
+                <h3>Your Sessions</h3>
+                <p>Quick view of paired WhatsApp numbers</p>
+            </div>
+        </div>
+        <div id="sessionsMini">
+            <div class="empty"><i class="fas fa-spinner fa-spin"></i>Loading…</div>
+        </div>
+        <a href="/dashboard" class="btn btn-ghost btn-block" style="margin-top:14px">
+            <i class="fas fa-gauge-high"></i> Manage in Dashboard
+        </a>
+    </div>
+
+    <!-- ============ ACCOUNT DETAILS ============ -->
+    <div class="card">
+        <div class="card-head">
+            <div class="card-head-icon"><i class="fas fa-circle-info"></i></div>
+            <div>
+                <h3>Account Details</h3>
+                <p>Read-only information</p>
+            </div>
+        </div>
+
+        <div class="info-row">
+            <span class="lbl">Account ID</span>
+            <span class="val mono" id="dId">—</span>
+        </div>
+        <div class="info-row">
+            <span class="lbl">Role</span>
+            <span class="val" id="dRole">—</span>
+        </div>
+        <div class="info-row">
+            <span class="lbl">Member since</span>
+            <span class="val" id="dCreated">—</span>
+        </div>
+        <div class="info-row">
+            <span class="lbl">Last login</span>
+            <span class="val" id="dLastLogin">—</span>
+        </div>
+    </div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/sidebar.js"></script>
+<script>
+// ============================================
+//   AUTH
+// ============================================
+const token = localStorage.getItem('token');
+if (!token) location.href = '/login';
+
+// ============================================
+//   TOAST / HELPERS
+// ============================================
+const toastEl = document.getElementById('toast');
+function showToast(msg, isErr = false) {
+    toastEl.textContent = msg;
+    toastEl.classList.toggle('err', isErr);
+    toastEl.classList.add('show');
+    setTimeout(() => toastEl.classList.remove('show'), 2400);
+}
+
+async function api(path, opts = {}) {
+    const r = await fetch(path, {
+        ...opts,
+        headers: {
+            'Authorization': 'Bearer ' + token,
+            ...(opts.body ? {'Content-Type': 'application/json'} : {}),
+            ...(opts.headers || {})
+        }
+    });
+    const text = await r.text();
+    let data; try { data = JSON.parse(text); } catch { data = {}; }
+    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    return data;
+}
+
+function fmtDate(ts) {
+    if (!ts) return '—';
+    return new Date(ts).toLocaleString();
+}
+
+// ============================================
+//   LOAD PROFILE
+// ============================================
+async function loadProfile() {
+    try {
+        const d = await api('/api/user/profile');
+        const u = d.user || {};
+        const s = d.stats || {};
+
+        // Hero
+        const initial = (u.name || u.email || 'U').charAt(0).toUpperCase();
+        document.getElementById('avatar').textContent = initial;
+        document.getElementById('name').textContent = u.name || 'Unnamed User';
+        document.getElementById('email').textContent = u.email || '—';
+
+        // Badges
+        let badges = '';
+        badges += u.isAdmin
+            ? '<span class="badge badge-admin"><i class="fas fa-crown"></i> Administrator</span>'
+            : '<span class="badge badge-user"><i class="fas fa-user"></i> User</span>';
+        badges += '<span class="badge badge-active"><i class="fas fa-circle-check"></i> Active</span>';
+        document.getElementById('badges').innerHTML = badges;
+
+        // Stats
+        document.getElementById('statSessions').textContent = s.sessions ?? 0;
+        document.getElementById('statMessages').textContent = s.messages ?? 0;
+        document.getElementById('statCredits').textContent  = u.credits ?? 0;
+        document.getElementById('statMax').textContent      = u.maxSessions ?? 0;
+
+        // Edit form
+        document.getElementById('editName').value = u.name || '';
+
+        // Account details
+        document.getElementById('dId').textContent = u.id || '—';
+        document.getElementById('dRole').textContent = u.isAdmin ? 'Administrator' : 'User';
+        document.getElementById('dCreated').textContent = fmtDate(u.createdAt);
+        document.getElementById('dLastLogin').textContent = fmtDate(u.lastLogin);
+    } catch (e) {
+        showToast(e.message, true);
+    }
+}
+
+// ============================================
+//   LOAD SESSIONS
+// ============================================
+async function loadSessions() {
+    const box = document.getElementById('sessionsMini');
+    try {
+        const d = await api('/api/user/sessions');
+        if (!d.sessions?.length) {
+            box.innerHTML = '<div class="empty"><i class="fas fa-mobile-screen"></i>No sessions yet</div>';
+            return;
+        }
+        box.innerHTML = d.sessions.slice(0, 5).map(s => {
+            const cls = s.connected ? 'on' : (s.ready ? 'connecting' : 'off');
+            const label = s.connected ? 'Online' : (s.ready ? 'Connecting' : 'Offline');
+            return `
+                <div class="mini-session">
+                    <div class="phone">📱 +${escapeHtml(s.phone || 'pending')}</div>
+                    <span class="status ${cls}">${label}</span>
+                </div>
+            `;
+        }).join('');
+        if (d.sessions.length > 5) {
+            box.innerHTML += `<div style="text-align:center;color:var(--muted);font-size:11px;padding:8px">
+                +${d.sessions.length - 5} more session(s)
+            </div>`;
+        }
+    } catch (e) {
+        box.innerHTML = `<div class="empty">❌ ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+// ============================================
+//   SAVE NAME
+// ============================================
+document.getElementById('saveNameBtn').onclick = async () => {
+    const name = document.getElementById('editName').value.trim();
+    const err = document.getElementById('nameErr');
+    const ok  = document.getElementById('nameOk');
+    err.classList.remove('show');
+    ok.classList.remove('show');
+
+    if (!name) {
+        err.innerText = 'Name cannot be empty';
+        err.classList.add('show');
+        return;
+    }
+
+    const btn = document.getElementById('saveNameBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="skeleton"></span> Saving…';
+
+    try {
+        await api('/api/user/profile', {
+            method: 'POST',
+            body: JSON.stringify({ name })
+        });
+
+        // Refresh local user cache so sidebar shows new name
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        user.name = name;
+        localStorage.setItem('user', JSON.stringify(user));
+
+        ok.innerText = '✅ Name updated';
+        ok.classList.add('show');
+        showToast('Name saved');
+        loadProfile();
+    } catch (e) {
+        err.innerText = e.message;
+        err.classList.add('show');
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-save"></i> Save Name';
+};
+
+// ============================================
+//   CHANGE PASSWORD
+// ============================================
+document.getElementById('changePassBtn').onclick = async () => {
+    const oldPass = document.getElementById('oldPassword').value;
+    const newPass = document.getElementById('newPassword').value;
+    const err = document.getElementById('passErr');
+    const ok  = document.getElementById('passOk');
+    err.classList.remove('show');
+    ok.classList.remove('show');
+
+    if (!oldPass || !newPass) {
+        err.innerText = 'Both fields are required';
+        err.classList.add('show');
+        return;
+    }
+    if (newPass.length < 6) {
+        err.innerText = 'New password must be at least 6 characters';
+        err.classList.add('show');
+        return;
+    }
+
+    const btn = document.getElementById('changePassBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="skeleton"></span> Updating…';
+
+    try {
+        await api('/api/user/password', {
+            method: 'POST',
+            body: JSON.stringify({ oldPassword: oldPass, newPassword: newPass })
+        });
+        ok.innerText = '✅ Password updated';
+        ok.classList.add('show');
+        showToast('Password changed');
+        document.getElementById('oldPassword').value = '';
+        document.getElementById('newPassword').value = '';
+    } catch (e) {
+        err.innerText = e.message;
+        err.classList.add('show');
+    }
+
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-key"></i> Update Password';
+};
+
+// ============================================
+//   HELPERS
+// ============================================
+function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+}
+
+// ============================================
+//   BOOT
+// ============================================
+loadProfile();
+loadSessions();
+</script>
+</body>
+</html>
