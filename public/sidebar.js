@@ -15,16 +15,21 @@
 
     // ---- THEME MAPPING ----
     const THEMES = {
-        dashboard:  'theme-dashboard',
-        pair:       'theme-pair',
-        channel:    'theme-channel',
-        live:       'theme-live',
-        web:        'theme-web',
-        settings:   'theme-settings',
-        profile:    'theme-profile',
-        admin:      'theme-admin',
-        'api-docs': 'theme-api',
-        'api-dics': 'theme-api'
+        dashboard:         'theme-dashboard',
+        pair:              'theme-pair',
+        channel:           'theme-channel',
+        live:              'theme-live',
+        web:               'theme-web',
+        settings:          'theme-settings',
+        profile:           'theme-profile',
+        admin:             'theme-admin',
+        'admin-audit':     'theme-audit',
+        'admin-analytics': 'theme-analytics',
+        'admin-backup':    'theme-backup',
+        'admin-payments':  'theme-payments',
+        'admin-ai':        'theme-ai',
+        'api-docs':        'theme-api',
+        'api-dics':        'theme-api'
     };
     document.body.classList.add(THEMES[name] || 'theme-dashboard');
     document.documentElement.style.background = '#000';
@@ -50,8 +55,13 @@
         { id: 'settings',  href: '/settings',  icon: 'fa-gear',            label: 'Settings' },
 
         { sec: 'Admin', admin: true },
-        { id: 'admin',     href: '/admin',     icon: 'fa-shield-halved',   label: 'Admin Panel', admin: true },
-        { id: 'api-docs',  href: '/api-docs',  icon: 'fa-code',            label: 'API Docs',    admin: true }
+        { id: 'admin',             href: '/admin',             icon: 'fa-shield-halved',  label: 'Admin Panel',  admin: true },
+        { id: 'admin-analytics',   href: '/admin-analytics',   icon: 'fa-chart-line',     label: 'Analytics',    admin: true },
+        { id: 'admin-audit',       href: '/admin-audit',       icon: 'fa-scroll',         label: 'Audit Log',    admin: true },
+        { id: 'admin-backup',      href: '/admin-backup',      icon: 'fa-box-archive',    label: 'Backup',       admin: true },
+        { id: 'admin-payments',    href: '/admin-payments',    icon: 'fa-credit-card',    label: 'Payments',     admin: true },
+        { id: 'admin-ai',          href: '/admin-ai',          icon: 'fa-robot',          label: 'AI Control',   admin: true },
+        { id: 'api-docs',          href: '/api-docs',          icon: 'fa-code',           label: 'API Docs',     admin: true }
     ];
 
     let navHtml = '';
