@@ -2,57 +2,31 @@ const { fancy } = require('../lib/font');
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
-const axios = require('axios');
 const fs = require('fs-extra');
 const path = require('path');
 const os = require('os');
 
-// ===================== LYRICS FETCHER =====================
-async function fetchLyrics(title, artist) {
-    // Try LyricsOVH first (free, no key)
-    try {
-        const r = await axios.get('https://api.lyrics.ovh/v1/' + encodeURIComponent(artist) + '/' + encodeURIComponent(title), { timeout: 8000 });
-        if (r.data?.lyrics) return r.data.lyrics.trim();
-    } catch {}
-
-    // Fallback to LRCLIB (free, no key, also has synced lyrics)
-    try {
-        const r = await axios.get('https://lrclib.net/api/search', {
-            params: { q: `${title} ${artist}` },
-            timeout: 8000
-        });
-        if (r.data?.[0]?.plainLyrics) return r.data[0].plainLyrics.trim();
-    } catch {}
-
-    return null;
-}
-
-function splitArtistTitle(uploader, title) {
-    // Try to guess artist from uploader or title "Artist - Song"
-    let artist = (uploader || '').replace(/ - Topic$/i, '').trim();
-    let songTitle = title || '';
-
-    if (!artist || artist.length > 40) {
-        const m = songTitle.match(/^([^-]+)\s*-\s*(.+)$/);
-        if (m) {
-            artist = m[1].trim();
-            songTitle = m[2].trim();
-        }
-    }
-    return { artist, title: songTitle };
-}
+const MAX_FILE_MB = 64;
 
 module.exports = {
     name: 'play',
     category: 'download',
-    aliases: ['music', 'mp3', 'playsong'],
-    description: 'Search and download a song as MP3 audio (with lyrics)',
+    aliases: ['music', 'mp3', 'playsong', 'audio'],
+    description: 'Download any song as MP3 audio',
 
     async execute(conn, msg, args, ctx) {
         const { from, prefix } = ctx;
         const query = args.join(' ').trim();
 
-        const searchQuery = query || 'top hits 2025';
+        if (!query) {
+            return conn.sendMessage(from, {
+                text: fancy(`❌ Usage: ${prefix}play <song name>`)
+            }, { quoted: msg });
+        }
+
+        const status = await conn.sendMessage(from, {
+            text: fancy(`🎵 Downloading: ${query}...`)
+        }, { quoted: msg });
 
         const tmpDir = path.join(os.tmpdir(), `xmd_play_${Date.now()}`);
         await fs.ensureDir(tmpDir);
@@ -60,107 +34,93 @@ module.exports = {
 
         let meta = null;
         let buffer = null;
-        let downloaded = false;
 
-        // ---------- ATTEMPT 1: yt-dlp download ----------
         try {
-            const cmd = `yt-dlp "ytsearch1:${searchQuery}" --no-playlist -x --audio-format mp3 --audio-quality 0 --embed-thumbnail --add-metadata -o "${outTemplate}" --print-json --no-warnings --ignore-errors --retries 3 --socket-timeout 30`;
-            const { stdout } = await execAsync(cmd, { timeout: 120000, maxBuffer: 20 * 1024 * 1024 });
+            // Try mp3 first — yt-dlp with audio extraction
+            const cmd = [
+                'yt-dlp',
+                `"ytsearch1:${query}"`,
+                '--no-playlist',
+                '-x',
+                '--audio-format mp3',
+                '--audio-quality 128K',
+                '--embed-thumbnail',
+                '--add-metadata',
+                '--no-warnings',
+                '--no-check-certificate',
+                '--retries 3',
+                '--socket-timeout 30',
+                '--max-filesize 60M',
+                `-o "${outTemplate}"`,
+                '--print-json'
+            ].join(' ');
+
+            const { stdout } = await execAsync(cmd, {
+                timeout: 150000,
+                maxBuffer: 20 * 1024 * 1024
+            });
 
             const lines = stdout.trim().split('\n').filter(Boolean);
-            if (lines.length) meta = JSON.parse(lines[lines.length - 1]);
+            if (lines.length) {
+                try { meta = JSON.parse(lines[lines.length - 1]); } catch {}
+            }
 
             const files = await fs.readdir(tmpDir);
-            if (files.length) {
-                buffer = await fs.readFile(path.join(tmpDir, files[0]));
-                downloaded = true;
-            }
+            if (!files.length) throw new Error('yt-dlp did not produce a file');
+
+            // Pick the audio file
+            const audioFile = files.find(f => /\.(mp3|m4a|webm|opus|ogg)$/i.test(f)) || files[0];
+            const filePath = path.join(tmpDir, audioFile);
+            const stat = await fs.stat(filePath);
+            const sizeMB = stat.size / 1024 / 1024;
+            if (sizeMB > MAX_FILE_MB) throw new Error(`File too large (${sizeMB.toFixed(1)} MB)`);
+
+            buffer = await fs.readFile(filePath);
         } catch (err) {
-            console.error('play download error:', err.message);
+            console.error('[play] yt-dlp failed:', err.message);
         }
 
-        // ---------- ATTEMPT 2: Fallback to Spotify search for metadata ----------
-        if (!meta) {
-            try {
-                const r = await axios.get('https://pika-spotify.vercel.app/search/', {
-                    params: { q: searchQuery, limit: 1 }, timeout: 10000
-                });
-                const track = r.data?.results?.[0] || r.data?.[0];
-                if (track) {
-                    meta = {
-                        title: track.name,
-                        uploader: track.artists?.join(', '),
-                        duration: track.duration_ms ? Math.round(track.duration_ms / 1000) : null,
-                        webpage_url: track.external_urls?.spotify,
-                        thumbnail: track.album?.images?.[0]?.url
-                    };
-                }
-            } catch {}
+        if (!buffer) {
+            try { await fs.remove(tmpDir); } catch {}
+            return conn.sendMessage(from, {
+                text: fancy('❌ Download failed. Try again in a moment.')
+            }, { quoted: msg });
         }
 
-        // ---------- Build metadata ----------
-        const title = meta?.title || searchQuery;
-        const uploader = meta?.uploader || 'Unknown';
+        const title = meta?.title || query;
+        const uploader = meta?.uploader || meta?.channel || 'Unknown';
         const duration = meta?.duration || null;
-        const sourceUrl = meta?.webpage_url || '';
-        const thumbnail = meta?.thumbnail || null;
+        const sizeMB = (buffer.length / 1024 / 1024).toFixed(2);
 
-        // ---------- Fetch lyrics ----------
-        const { artist: guessArtist, title: guessTitle } = splitArtistTitle(uploader, title);
-        const lyrics = await fetchLyrics(guessTitle, guessArtist).catch(() => null);
-
-        // ---------- Send audio ----------
-        if (downloaded && buffer) {
-            const sizeMB = (buffer.length / 1024 / 1024).toFixed(2);
+        try {
             await conn.sendMessage(from, {
                 audio: buffer,
-                mimetype: 'audio/mp4',
+                mimetype: 'audio/mpeg',
                 fileName: `${safeName(title)}.mp3`,
                 ptt: false
             }, { quoted: msg });
 
             const caption =
                 `╭─〔 🎵 ᴍᴜꜱɪᴄ 〕\n│\n` +
-                `│ 🎤 Title:  ${title}\n` +
-                `│ 🎙 Artist: ${uploader}\n` +
-                `│ ⏱ Duration: ${formatDuration(duration)}\n` +
-                `│ 💾 Size:   ${sizeMB} MB\n` +
-                (sourceUrl ? `│ 🔗 Source: ${sourceUrl}\n` : '') +
-                `│\n` +
-                (lyrics ? `│ 📝 ʟʏʀɪᴄꜱ\n│\n│ ${lyrics.slice(0, 3000)}\n│\n` : '') +
+                `│ 🎤 ${title}\n` +
+                `│ 🎙 ${uploader}\n` +
+                `│ ⏱ ${fmtTime(duration)}\n` +
+                `│ 💾 ${sizeMB} MB\n│\n` +
                 `╰──────────────────────`;
-
             await conn.sendMessage(from, { text: caption }, { quoted: msg });
-        } else {
-            // Even if download failed, still send info + lyrics
-            const caption =
-                `╭─〔 🎵 ꜱᴏɴɢ ɪɴꜰᴏ 〕\n│\n` +
-                `│ 🎤 Title:  ${title}\n` +
-                `│ 🎙 Artist: ${uploader}\n` +
-                `│ ⏱ Duration: ${formatDuration(duration)}\n` +
-                (thumbnail ? `│ 🖼 Thumb:  ${thumbnail}\n` : '') +
-                (sourceUrl ? `│ 🔗 Link:   ${sourceUrl}\n` : '') +
-                `│\n` +
-                (lyrics ? `│ 📝 ʟʏʀɪᴄꜱ\n│\n│ ${lyrics.slice(0, 3000)}\n│\n` : '') +
-                `│ 💡 Try a different spelling for a downloadable result.\n│\n` +
-                `╰──────────────────────`;
-
-            if (thumbnail) {
-                try {
-                    await conn.sendMessage(from, { image: { url: thumbnail }, caption }, { quoted: msg });
-                } catch {
-                    await conn.sendMessage(from, { text: caption }, { quoted: msg });
-                }
-            } else {
-                await conn.sendMessage(from, { text: caption }, { quoted: msg });
-            }
+        } catch (err) {
+            console.error('[play] send failed:', err.message);
+            try { await fs.remove(tmpDir); } catch {}
+            return conn.sendMessage(from, {
+                text: fancy('❌ Failed to send audio. Try again.')
+            }, { quoted: msg });
         }
 
-        await fs.remove(tmpDir).catch(() => {});
+        try { await fs.remove(tmpDir); } catch {}
     }
 };
 
-function formatDuration(sec) {
+function fmtTime(sec) {
     if (!sec) return '—';
     const m = Math.floor(sec / 60);
     const s = Math.floor(sec % 60).toString().padStart(2, '0');
