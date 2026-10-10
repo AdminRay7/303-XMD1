@@ -1,8 +1,6 @@
 // ============================================================
 //   303-XMD — handler.js
-//   Auto-detects: antidelete · auto-view status · auto-like status
-//   · greetings · group events · antilink · antibug · antispam
-//   All toggles live in config.js / .env
+//   Auto-detects + analytics + AI auto-reply
 // ============================================================
 const fs = require('fs-extra');
 const path = require('path');
@@ -12,6 +10,8 @@ const { fancy } = require('./lib/font');
 const { User, ChannelSubscriber, ChannelPost } = require('./database/models');
 const messageStore = require('./lib/messageStore');
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
+const analytics = require('./lib/analytics');
+const aiChat = require('./lib/aiChat');
 
 // ================= HOT-RELOAD COMMAND LOADER =================
 const COMMANDS_DIR = path.join(__dirname, 'commands');
@@ -157,7 +157,6 @@ module.exports = async (conn, m, userId = "default") => {
         const command   = isCmd ? body.slice(prefix.length).trim().split(' ')[0].toLowerCase() : '';
         const args      = body ? body.trim().split(/ +/).slice(1) : [];
 
-        // Reload commands if folder changed
         try { loadCommands(false); } catch {}
 
         // ================= CONTEXT =================
@@ -279,7 +278,7 @@ module.exports = async (conn, m, userId = "default") => {
         // ================= BUTTON ROUTER =================
         if (await routeButtonInteraction(conn, msg, cmdCtx)) return;
 
-        // ================= STATUS (handled by auto/status* modules) =================
+        // ================= STATUS =================
         if (isStatus) return;
 
         // ================= WORK MODE =================
@@ -308,19 +307,50 @@ module.exports = async (conn, m, userId = "default") => {
             } catch {}
         }
 
-        // ================= COMMANDS =================
+        // ================= COMMANDS (with analytics) =================
         if (isCmd) {
             const handler = commandCache.get(command);
             if (handler && typeof handler.execute === 'function') {
+                const t0 = Date.now();
+                let success = true;
+                let errorMsg = null;
+
                 try {
                     await Promise.race([
                         handler.execute(conn, msg, args, cmdCtx),
                         new Promise((_, rej) => setTimeout(() => rej(new Error('Command timeout')), 60000))
                     ]);
                 } catch (e) {
+                    success = false;
+                    errorMsg = e.message;
                     console.error(`Cmd "${command}":`, e.message);
                     await conn.sendMessage(from, { text: fancy(`❌ Error: ${e.message}`) });
                 }
+
+                try {
+                    await analytics.recordCommand({
+                        sessionId: userId,
+                        accountId: null,
+                        command,
+                        sender,
+                        isGroup,
+                        success,
+                        errorMsg,
+                        durationMs: Date.now() - t0
+                    });
+                } catch {}
+            }
+        }
+
+        // ================= AI AUTO-REPLY (per session) =================
+        else if (!isCmd && !isOwner && !isGroup && body && config.aiChatEnabled) {
+            try {
+                const reply = await aiChat.askAI(body, userId, config.aiSystemPrompt);
+                if (reply) {
+                    await conn.sendMessage(from, { text: reply }, { quoted: msg });
+                }
+            } catch (e) {
+                console.error("aiChat reply error:", e.message);
             }
         }
 
