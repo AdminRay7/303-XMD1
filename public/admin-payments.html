@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Payments | 303-XMD</title>
+<meta name="theme-color" content="#00d4ff">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💳</text></svg>">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/theme.css">
+<style>
+body.theme-payments{
+    --g1:#00d4ff;
+    --g2:#7b2ff7;
+    --glow:rgba(0,212,255,.4);
+}
+.pkg-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:14px;
+    margin-bottom:24px;
+}
+.pkg-card{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:22px 18px;
+    text-align:center;
+    position:relative;
+    overflow:hidden;
+    transition:.2s;
+}
+.pkg-card::before{
+    content:'';
+    position:absolute;
+    top:0; left:15%; right:15%;
+    height:3px;
+    background:linear-gradient(90deg,transparent,var(--g1),transparent);
+    opacity:.7;
+}
+.pkg-card:hover{
+    transform:translateY(-3px);
+    border-color:var(--g1);
+    box-shadow:0 8px 30px rgba(0,212,255,.15);
+}
+.pkg-card .credits{
+    font-size:32px;
+    font-weight:800;
+    background:linear-gradient(135deg,var(--g1),var(--g2));
+    -webkit-background-clip:text;
+    background-clip:text;
+    color:transparent;
+}
+.pkg-card .label{
+    font-size:10px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:var(--muted);
+    margin-top:4px;
+}
+.pkg-card .amount{
+    font-size:20px;
+    font-weight:700;
+    color:#fff;
+    margin-top:14px;
+}
+.pkg-card .currency{
+    font-size:11px;
+    color:var(--muted);
+}
+.invoice-row{
+    display:grid;
+    grid-template-columns:auto 1fr auto auto;
+    gap:12px;
+    align-items:center;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:14px 16px;
+    margin-bottom:10px;
+    font-size:12.5px;
+}
+.invoice-provider{
+    font-size:10px;
+    padding:3px 9px;
+    border-radius:20px;
+    font-weight:800;
+    letter-spacing:1px;
+    text-transform:uppercase;
+}
+.invoice-provider.stripe{ background:rgba(100,150,255,.15); color:#6496ff; border:1px solid rgba(100,150,255,.4) }
+.invoice-provider.paystack{ background:rgba(0,212,255,.15); color:var(--g1); border:1px solid rgba(0,212,255,.4) }
+.invoice-status{
+    font-size:10px;
+    padding:3px 9px;
+    border-radius:20px;
+    font-weight:800;
+    letter-spacing:1px;
+    text-transform:uppercase;
+}
+.invoice-status.paid{ background:rgba(0,229,160,.15); color:#00e5a0; border:1px solid rgba(0,229,160,.4) }
+.invoice-status.pending{ background:rgba(255,179,71,.15); color:#ffb347; border:1px solid rgba(255,179,71,.4) }
+.invoice-status.failed{ background:rgba(255,82,82,.15); color:#ff9999; border:1px solid rgba(255,82,82,.4) }
+</style>
+</head>
+<body class="theme-payments">
+
+<div id="appSidebarMount"></div>
+
+<main class="app-content">
+    <div class="page-head">
+        <div>
+            <h2>Payments</h2>
+            <div class="sub">Credit packages · Invoices · Revenue</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="refreshBtn"><i class="fas fa-rotate"></i> Refresh</button>
+    </div>
+
+    <div class="pkg-grid" id="pkgGrid">
+        <div class="empty"><i class="fas fa-spinner fa-spin"></i>Loading…</div>
+    </div>
+
+    <div class="card">
+        <div class="card-head">
+            <div class="card-head-icon"><i class="fas fa-receipt"></i></div>
+            <div><h3>Recent Invoices</h3><p>Last 50 transactions</p></div>
+        </div>
+        <div id="invoiceList">
+            <div class="empty"><i class="fas fa-spinner fa-spin"></i>Loading…</div>
+        </div>
+    </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/sidebar.js"></script>
+<script>
+const ADMIN_EMAIL = 'ryanobanga243@gmail.com';
+const token = localStorage.getItem('token');
+const user = JSON.parse(localStorage.getItem('user') || '{}');
+if (!token) location.href = '/login';
+
+const email = (user.email || '').trim().toLowerCase();
+if (email !== ADMIN_EMAIL.toLowerCase()) {
+    document.body.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#fff;font-family:sans-serif"><h2>ACCESS DENIED</h2></div>`;
+    throw new Error('Not admin');
+}
+
+const toastEl = document.getElementById('toast');
+function toast(msg, err = false) {
+    toastEl.textContent = msg;
+    toastEl.classList.toggle('err', err);
+    toastEl.classList.add('show');
+    setTimeout(() => toastEl.classList.remove('show'), 2200);
+}
+function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function loadPackages() {
+    const grid = document.getElementById('pkgGrid');
+    try {
+        const r = await fetch('/api/admin/payments/packages', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const d = await r.json();
+        const pkgs = d.packages || {};
+
+        if (!Object.keys(pkgs).length) {
+            grid.innerHTML = '<div class="empty">No packages configured</div>';
+            return;
+        }
+
+        grid.innerHTML = Object.entries(pkgs).map(([key, p]) => `
+            <div class="pkg-card">
+                <div class="credits">${p.credits}</div>
+                <div class="label">Credits</div>
+                <div class="amount">${(p.amount / 100).toFixed(2)}</div>
+                <div class="currency">${escapeHtml(p.currency)}</div>
+                <div style="margin-top:12px;font-size:10px;color:var(--muted);letter-spacing:2px;text-transform:uppercase">${escapeHtml(key)}</div>
+            </div>
+        `).join('');
+    } catch (e) { grid.innerHTML = `<div class="empty">❌ ${escapeHtml(e.message)}</div>`; }
+}
+
+async function loadInvoices() {
+    const box = document.getElementById('invoiceList');
+    box.innerHTML = '<div class="empty">Coming soon — invoice list endpoint</div>';
+}
+
+document.getElementById('refreshBtn').onclick = () => { loadPackages(); loadInvoices(); };
+
+loadPackages();
+loadInvoices();
+</script>
+</body>
+</html>

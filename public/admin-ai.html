@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>AI Control | 303-XMD</title>
+<meta name="theme-color" content="#a855f7">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/theme.css">
+<style>
+body.theme-ai{
+    --g1:#a855f7;
+    --g2:#6366f1;
+    --glow:rgba(168,85,247,.4);
+    --bg:#0a001a;
+    --bg2:#14002e;
+}
+.chat-box{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:20px;
+    height:520px;
+    display:flex;
+    flex-direction:column;
+}
+.messages{
+    flex:1;
+    overflow-y:auto;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    padding-right:6px;
+    margin-bottom:14px;
+}
+.msg{
+    max-width:85%;
+    padding:10px 14px;
+    border-radius:12px;
+    font-size:13px;
+    line-height:1.55;
+    word-wrap:break-word;
+    white-space:pre-wrap;
+}
+.msg.user{
+    align-self:flex-end;
+    background:linear-gradient(135deg,var(--g1),var(--g2));
+    color:#000;
+    border-bottom-right-radius:4px;
+    font-weight:600;
+}
+.msg.ai{
+    align-self:flex-start;
+    background:rgba(255,255,255,.05);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-bottom-left-radius:4px;
+}
+.msg.meta{
+    align-self:center;
+    background:rgba(0,0,0,.3);
+    color:var(--muted);
+    font-size:10.5px;
+    padding:5px 12px;
+    border-radius:20px;
+    letter-spacing:1px;
+    text-transform:uppercase;
+}
+.msg.thinking{
+    align-self:flex-start;
+    background:rgba(168,85,247,.1);
+    border:1px solid rgba(168,85,247,.3);
+    color:var(--g1);
+    font-style:italic;
+}
+.chat-input{
+    display:flex;
+    gap:8px;
+}
+.chat-input textarea{
+    flex:1;
+    padding:12px 14px;
+    background:rgba(0,0,0,.4);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-radius:12px;
+    font-size:13px;
+    font-family:inherit;
+    outline:none;
+    resize:none;
+    max-height:100px;
+    min-height:44px;
+}
+.chat-input textarea:focus{ border-color:var(--g1); box-shadow:0 0 20px var(--glow); }
+.send-btn{
+    width:44px; height:44px;
+    border-radius:12px;
+    border:none;
+    background:linear-gradient(135deg,var(--g1),var(--g2));
+    color:#000; font-size:15px;
+    cursor:pointer; flex-shrink:0;
+    box-shadow:0 4px 16px var(--glow);
+}
+.send-btn:hover{ filter:brightness(1.15); transform:scale(1.03); }
+.send-btn:disabled{ opacity:.5; cursor:not-allowed; }
+</style>
+</head>
+<body class="theme-ai">
+
+<div id="appSidebarMount"></div>
+
+<main class="app-content">
+    <div class="page-head">
+        <div>
+            <h2>AI Control</h2>
+            <div class="sub">Test the AI chatbot · Clear session memory</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="clearBtn"><i class="fas fa-eraser"></i> Clear Memory</button>
+    </div>
+
+    <div class="chat-box">
+        <div class="messages" id="messages">
+            <div class="msg meta">AI provider: <span id="providerLabel">loading…</span></div>
+            <div class="msg ai">Hi admin! Ask me anything to test the AI chatbot configured on your bot.</div>
+        </div>
+        <div class="chat-input">
+            <textarea id="input" placeholder="Type a message…"></textarea>
+            <button class="send-btn" id="sendBtn"><i class="fas fa-paper-plane"></i></button>
+        </div>
+    </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/sidebar.js"></script>
+<script>
+const ADMIN_EMAIL = 'ryanobanga243@gmail.com';
+const token = localStorage.getItem('token');
+const user = JSON.parse(localStorage.getItem('user') || '{}');
+if (!token) location.href = '/login';
+
+const email = (user.email || '').trim().toLowerCase();
+if (email !== ADMIN_EMAIL.toLowerCase()) {
+    document.body.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#fff;font-family:sans-serif"><h2>ACCESS DENIED</h2></div>`;
+    throw new Error('Not admin');
+}
+
+const messagesBox = document.getElementById('messages');
+const input = document.getElementById('input');
+const sendBtn = document.getElementById('sendBtn');
+const clearBtn = document.getElementById('clearBtn');
+const providerLabel = document.getElementById('providerLabel');
+const toastEl = document.getElementById('toast');
+
+const SESSION = 'admin_' + Date.now();
+
+function toast(msg, err = false) {
+    toastEl.textContent = msg;
+    toastEl.classList.toggle('err', err);
+    toastEl.classList.add('show');
+    setTimeout(() => toastEl.classList.remove('show'), 2200);
+}
+
+function addMsg(text, cls = 'ai') {
+    const div = document.createElement('div');
+    div.className = 'msg ' + cls;
+    div.textContent = text;
+    messagesBox.appendChild(div);
+    messagesBox.scrollTop = messagesBox.scrollHeight;
+    return div;
+}
+
+async function send() {
+    const text = input.value.trim();
+    if (!text) return;
+
+    addMsg(text, 'user');
+    input.value = '';
+    sendBtn.disabled = true;
+    const thinking = addMsg('Thinking…', 'thinking');
+
+    try {
+        const r = await fetch('/api/admin/ai/chat', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: SESSION, message: text })
+        });
+        const d = await r.json();
+        thinking.remove();
+
+        if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
+        if (!d.reply) {
+            addMsg('⚠️ AI returned no response — check AI_API_KEY in .env', 'ai');
+        } else {
+            addMsg(d.reply, 'ai');
+        }
+    } catch (e) {
+        thinking.remove();
+        addMsg('❌ ' + e.message, 'ai');
+    }
+
+    sendBtn.disabled = false;
+    input.focus();
+}
+
+sendBtn.onclick = send;
+input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        send();
+    }
+});
+
+clearBtn.onclick = async () => {
+    try {
+        const r = await fetch('/api/admin/ai/clear/' + encodeURIComponent(SESSION), {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error);
+        messagesBox.innerHTML = `<div class="msg meta">Memory cleared</div>`;
+        addMsg('Memory cleared. Fresh conversation started.', 'ai');
+        toast('Memory cleared');
+    } catch (e) { toast(e.message, true); }
+};
+
+// Load provider label
+(async () => {
+    try {
+        // No dedicated endpoint, so just fetch config endpoint if available
+        providerLabel.textContent = 'see .env';
+    } catch {}
+})();
+
+input.focus();
+</script>
+</body>
+</html>

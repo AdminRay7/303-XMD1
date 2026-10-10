@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Audit Log | 303-XMD</title>
+<meta name="theme-color" content="#ffd700">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📜</text></svg>">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/theme.css">
+<style>
+body.theme-audit{
+    --g1:#ffd700;
+    --g2:#d97706;
+    --glow:rgba(255,215,0,.4);
+    --bg:#1a1200;
+    --bg2:#2e2000;
+}
+.audit-row{
+    display:grid;
+    grid-template-columns:auto 1fr auto;
+    gap:14px;
+    align-items:center;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:14px 16px;
+    margin-bottom:10px;
+    position:relative;
+    overflow:hidden;
+}
+.audit-row::before{
+    content:'';
+    position:absolute;
+    left:0; top:0; bottom:0;
+    width:3px;
+    background:linear-gradient(180deg,var(--g1),var(--g2));
+}
+.audit-icon{
+    width:40px; height:40px;
+    border-radius:10px;
+    background:linear-gradient(135deg,var(--g1),var(--g2));
+    display:flex; align-items:center; justify-content:center;
+    color:#000; font-size:16px;
+    flex-shrink:0;
+}
+.audit-body{ min-width:0; }
+.audit-action{
+    font-weight:700; color:#fff; font-size:13px;
+    letter-spacing:.5px; text-transform:uppercase;
+    margin-bottom:4px;
+}
+.audit-meta{
+    font-size:11px; color:var(--muted);
+    word-break:break-all;
+    line-height:1.6;
+}
+.audit-time{
+    font-family:'Courier New',monospace;
+    font-size:10px; color:var(--muted);
+    text-align:right;
+    white-space:nowrap;
+    flex-shrink:0;
+}
+.audit-details{
+    background:rgba(0,0,0,.35);
+    border-radius:6px;
+    padding:6px 10px;
+    font-family:'Courier New',monospace;
+    font-size:10.5px;
+    color:#b8c4cf;
+    margin-top:6px;
+    word-break:break-all;
+}
+.filter-bar{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:12px 14px;
+    margin-bottom:16px;
+    align-items:center;
+}
+.filter-bar input{
+    flex:1; min-width:180px;
+    padding:9px 12px;
+    background:rgba(0,0,0,.4);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-radius:9px;
+    font-size:12px;
+    outline:none;
+    font-family:inherit;
+}
+.filter-bar select{
+    padding:9px 12px;
+    background:rgba(0,0,0,.4);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-radius:9px;
+    font-size:12px;
+    outline:none;
+}
+</style>
+</head>
+<body class="theme-audit">
+
+<div id="appSidebarMount"></div>
+
+<main class="app-content">
+    <div class="page-head">
+        <div>
+            <h2>Audit Log</h2>
+            <div class="sub">Every admin action, timestamped</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="refreshBtn"><i class="fas fa-rotate"></i> Refresh</button>
+    </div>
+
+    <div class="filter-bar">
+        <input type="text" id="searchInput" placeholder="Search by admin email, action, target…">
+        <select id="actionFilter">
+            <option value="">All actions</option>
+            <option value="kill_session">Kill session</option>
+            <option value="ban_account">Ban account</option>
+            <option value="delete_account">Delete account</option>
+            <option value="backup_create">Backup create</option>
+            <option value="backup_download">Backup download</option>
+            <option value="broadcast">Broadcast</option>
+        </select>
+        <span style="font-size:11px;color:var(--muted);margin-left:auto" id="countLabel">0 logs</span>
+    </div>
+
+    <div id="logList">
+        <div class="empty"><i class="fas fa-spinner fa-spin"></i>Loading…</div>
+    </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/sidebar.js"></script>
+<script>
+const ADMIN_EMAIL = 'ryanobanga243@gmail.com';
+const token = localStorage.getItem('token');
+const user = JSON.parse(localStorage.getItem('user') || '{}');
+if (!token) location.href = '/login';
+
+const email = (user.email || '').trim().toLowerCase();
+if (email !== ADMIN_EMAIL.toLowerCase()) {
+    document.body.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;text-align:center"><div><h2>ACCESS DENIED</h2><p style="color:#888">Admin only</p></div></div>`;
+    throw new Error('Not admin');
+}
+
+const logList = document.getElementById('logList');
+const searchInput = document.getElementById('searchInput');
+const actionFilter = document.getElementById('actionFilter');
+const countLabel = document.getElementById('countLabel');
+const toastEl = document.getElementById('toast');
+
+let allLogs = [];
+
+function toast(msg, err = false) {
+    toastEl.textContent = msg;
+    toastEl.classList.toggle('err', err);
+    toastEl.classList.add('show');
+    setTimeout(() => toastEl.classList.remove('show'), 2200);
+}
+
+function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+const ICONS = {
+    kill_session: 'fa-skull',
+    ban_account: 'fa-ban',
+    delete_account: 'fa-trash',
+    backup_create: 'fa-box-archive',
+    backup_download: 'fa-download',
+    broadcast: 'fa-bullhorn',
+    login: 'fa-sign-in-alt',
+    promote_admin: 'fa-crown'
+};
+
+function render() {
+    const q = (searchInput.value || '').toLowerCase();
+    const action = actionFilter.value;
+
+    let rows = allLogs.slice();
+    if (action) rows = rows.filter(r => r.action === action);
+    if (q) rows = rows.filter(r =>
+        (r.adminEmail || '').toLowerCase().includes(q) ||
+        (r.action || '').toLowerCase().includes(q) ||
+        (r.target || '').toLowerCase().includes(q)
+    );
+
+    countLabel.textContent = `${rows.length} log${rows.length === 1 ? '' : 's'}`;
+
+    if (!rows.length) {
+        logList.innerHTML = `<div class="empty"><i class="fas fa-scroll"></i>No activity yet</div>`;
+        return;
+    }
+
+    logList.innerHTML = rows.map(r => {
+        const icon = ICONS[r.action] || 'fa-circle-dot';
+        const time = new Date(r.timestamp).toLocaleString();
+        const details = r.details && Object.keys(r.details).length
+            ? `<div class="audit-details">${escapeHtml(JSON.stringify(r.details))}</div>` : '';
+
+        return `
+            <div class="audit-row">
+                <div class="audit-icon"><i class="fas ${icon}"></i></div>
+                <div class="audit-body">
+                    <div class="audit-action">${escapeHtml(r.action || 'unknown')}</div>
+                    <div class="audit-meta">
+                        <i class="fas fa-user-shield"></i> ${escapeHtml(r.adminEmail || '—')}
+                        ${r.target ? ` · 🎯 ${escapeHtml(r.targetType || '')}: ${escapeHtml(r.target)}` : ''}
+                        ${r.ip ? `<br>🌐 ${escapeHtml(r.ip)}` : ''}
+                    </div>
+                    ${details}
+                </div>
+                <div class="audit-time">${escapeHtml(time)}</div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function loadLogs() {
+    try {
+        const r = await fetch('/api/admin/audit?limit=300', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed');
+        allLogs = d.logs || [];
+        render();
+    } catch (e) {
+        logList.innerHTML = `<div class="empty">❌ ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+document.getElementById('refreshBtn').onclick = () => { loadLogs(); toast('Refreshed'); };
+searchInput.addEventListener('input', render);
+actionFilter.onchange = render;
+
+loadLogs();
+setInterval(loadLogs, 15000);
+</script>
+</body>
+</html>
