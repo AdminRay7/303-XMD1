@@ -1398,6 +1398,8 @@ async function requestPairingCodeForSession(sessionId, phoneNumber) {
 
 // ---------------- SOCKET BOOT ----------------
 async function bootSocket(sessionId, session) {
+    session.id = sessionId;   // ← ADDED for live feed
+
     await initMongo();
 
     const collection = global.mongoClient.db("xmd303").collection("authState");
@@ -1425,6 +1427,59 @@ async function bootSocket(sessionId, session) {
 
     session.conn = conn;
     conn.ev.on("creds.update", saveCreds);
+
+    // ============================================================
+    //   LIVE FEED: WRAP sendMessage TO LOG OUTGOING
+    // ============================================================
+    const originalSend = conn.sendMessage.bind(conn);
+    conn.sendMessage = async function (jid, content, ...rest) {
+        try {
+            const liveFeed = require("./lib/liveFeed");
+            const myJid = conn.user?.id || "";
+            const myPhone = myJid.split(":")[0]?.split("@")[0]?.replace(/\D/g, "") || null;
+            const myName = config.botName || "Bot";
+
+            const isGroupChat = String(jid).endsWith("@g.us");
+            const text = content?.text || content?.caption || null;
+            const mediaType = content?.image ? "image"
+                           : content?.video ? "video"
+                           : content?.audio ? "audio"
+                           : content?.sticker ? "sticker"
+                           : content?.document ? "document"
+                           : null;
+
+            let chatName = String(jid).split("@")[0];
+            if (isGroupChat) {
+                try {
+                    const meta = await conn.groupMetadata(jid);
+                    chatName = meta.subject || chatName;
+                } catch {}
+            }
+
+            await liveFeed.push({
+                sessionId,
+                type: "message",
+                chatJid: jid,
+                chatName,
+                isGroup: isGroupChat,
+                senderJid: myJid,
+                senderName: myName,
+                senderPhone: myPhone,
+                recipientJid: jid,
+                recipientName: chatName,
+                recipientPhone: String(jid).split("@")[0]?.replace(/\D/g, "") || null,
+                fromMe: true,
+                text: text || (mediaType ? `[${mediaType}]` : "[message]"),
+                mediaType,
+                extra: { direction: "outgoing", messageId: null }
+            });
+        } catch (e) {
+            console.error("liveFeed outgoing:", e.message);
+        }
+
+        return originalSend(jid, content, ...rest);
+    };
+    // ============================================================
 
     conn.ev.on("connection.update", async (update) => {
         const { connection, lastDisconnect } = update;
