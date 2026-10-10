@@ -1,0 +1,4 @@
+const { fancy } = require('../lib/font');
+const L = ["Never have I ever lied about my age.","Never have I ever skipped a class.","Never have I ever cheated on a test.","Never have I ever pretended to be sick.","Never have I ever stalked someone online.","Never have I ever cried while watching a movie.","Never have I ever broken a promise.","Never have I ever ghosted someone.","Never have I ever stolen something.","Never have I ever forgotten someone's birthday."];
+module.exports = { name:'neverhave', category:'fun', aliases:['nhie'], description:'Never have I ever statement',
+async execute(conn,msg,args,ctx){ const {from}=ctx; const r=L[Math.floor(Math.random()*L.length)]; await conn.sendMessage(from,{text:`╭─〔 🙊 ɴᴇᴠᴇʀ ʜᴀᴠᴇ ɪ ᴇᴠᴇʀ 〕\n│\n│ ${r}\n│\n╰──────────────────────`},{quoted:msg}); } };

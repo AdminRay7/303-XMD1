@@ -1,0 +1,4 @@
+const { fancy } = require('../lib/font');
+const UP=[0x030d,0x030e,0x0304,0x0305,0x033f,0x0311,0x0306,0x0310,0x0352,0x0357,0x0350,0x0340]; const DN=[0x0316,0x0317,0x0318,0x0319,0x031c,0x031d,0x031e,0x031f,0x0320,0x0329,0x032d,0x032e];
+module.exports = { name:'zalgo', category:'text', aliases:['creepy','cursed'], description:'Convert text to c̸r̸e̸e̸p̸y̸ zalgo text',
+async execute(conn,msg,args,ctx){ const {from}=ctx; const t=args.join(' ').trim(); if(!t) return conn.sendMessage(from,{text:fancy('❌ Usage: .zalgo hello')},{quoted:msg}); const out=t.split('').map(ch=>{ let c=ch; for(let i=0;i<5;i++){ c+=String.fromCharCode(UP[Math.floor(Math.random()*UP.length)]); c+=String.fromCharCode(DN[Math.floor(Math.random()*DN.length)]); } return c; }).join(''); await conn.sendMessage(from,{text:out},{quoted:msg}); } };

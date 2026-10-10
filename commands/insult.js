@@ -1,0 +1,4 @@
+const { fancy } = require('../lib/font');
+const L = ["You have the charisma of a wet sock.","Your brain has too many tabs open.","You're the type of person who claps when the plane lands.","You bring nothing to the table and the table is empty.","You have a face for radio.","You're not the sharpest tool in the shed.","You're like a cloud — when you disappear, it's a beautiful day.","I'd roast you harder but my mom said not to burn trash.","You're the reason instructions have pictures.","You're the human equivalent of a pop-up ad."];
+module.exports = { name:'insult', category:'fun', aliases:['burn2'], description:'Send an insult',
+async execute(conn,msg,args,ctx){ const {from}=ctx; const r=L[Math.floor(Math.random()*L.length)]; await conn.sendMessage(from,{text:`╭─〔 🔥 ɪɴꜱᴜʟᴛ 〕\n│\n│ ${r}\n│\n╰──────────────────────`},{quoted:msg}); } };

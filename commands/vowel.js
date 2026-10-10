@@ -1,0 +1,3 @@
+const { fancy } = require('../lib/font');
+module.exports = { name:'vowel', category:'misc', aliases:['countvowels'], description:'Count vowels in text',
+async execute(conn,msg,args,ctx){ const {from}=ctx; const t=args.join(' ').trim(); if(!t) return conn.sendMessage(from,{text:fancy('❌ Usage: .vowel hello')},{quoted:msg}); const m=t.toLowerCase().match(/[aeiou]/g)||[]; const cons=t.toLowerCase().match(/[bcdfghjklmnpqrstvwxyz]/g)||[]; await conn.sendMessage(from,{text:`╭─〔 🔤 ᴠᴏᴡᴇʟ ᴄᴏᴜɴᴛ 〕\n│\n│ 🅰 Vowels:     ${m.length}\n│ 🅱 Consonants: ${cons.length}\n│\n╰──────────────────────`},{quoted:msg}); } };

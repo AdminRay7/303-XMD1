@@ -1,0 +1,4 @@
+const { fancy } = require('../lib/font');
+const L = [["be able to fly","be able to turn invisible"],["always be 10 minutes late","always be 20 minutes early"],["live in the past","live in the future"],["have unlimited money","have unlimited time"],["never use social media again","never watch a movie again"],["only eat sweet food","only eat spicy food"],["be the smartest person","be the funniest person"],["read minds","control minds"],["never sleep","never eat"],["talk to animals","speak every language"]];
+module.exports = { name:'wouldyourather', category:'fun', aliases:['wyr'], description:'Would you rather question',
+async execute(conn,msg,args,ctx){ const {from}=ctx; const [a,b]=L[Math.floor(Math.random()*L.length)]; await conn.sendMessage(from,{text:`╭─〔 🤔 ᴡᴏᴜʟᴅ ʏᴏᴜ ʀᴀᴛʜᴇʀ 〕\n│\n│ 🅰 ${a}\n│\n│      OR\n│\n│ 🅱 ${b}\n│\n╰──────────────────────`},{quoted:msg}); } };

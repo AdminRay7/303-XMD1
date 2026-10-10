@@ -1,0 +1,4 @@
+const { fancy } = require('../lib/font');
+const L = [["fight 1 horse-sized duck","fight 100 duck-sized horses"],["always speak in rhymes","always sing instead of talk"],["have a pet dragon","have a pet unicorn"],["be the best dancer","be the best singer"],["know when you'll die","know how you'll die"],["never age","never get sick"],["be a genius","be a billionaire"],["time travel to the past","time travel to the future"],["be famous","be respected"],["live without music","live without movies"]];
+module.exports = { name:'wyr2', category:'fun', aliases:['rather2'], description:'Another would-you-rather',
+async execute(conn,msg,args,ctx){ const {from}=ctx; const [a,b]=L[Math.floor(Math.random()*L.length)]; await conn.sendMessage(from,{text:`╭─〔 🤔 ᴡʏʀ #2 〕\n│\n│ 🅰 ${a}\n│\n│      OR\n│\n│ 🅱 ${b}\n│\n╰──────────────────────`},{quoted:msg}); } };
