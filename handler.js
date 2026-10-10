@@ -16,7 +16,7 @@ const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 // ================= HOT-RELOAD COMMAND LOADER =================
 const COMMANDS_DIR = path.join(__dirname, 'commands');
 const commandCache = new Map();
-const autoCache = new Map();         // modules with auto hooks
+const autoCache = new Map();
 let folderSignature = '';
 let lastScan = 0;
 const RESCAN_DEBOUNCE_MS = 2000;
@@ -167,24 +167,57 @@ module.exports = async (conn, m, userId = "default") => {
         };
 
         // ============================================================
-        //   ⬇️⬇️⬇️  ONLY THIS BLOCK WAS ADDED  ⬇️⬇️⬇️
+        //   LIVE FEED: INCOMING
         // ============================================================
+        try {
+            if (!msg.key.fromMe && !isChannel && !isStatus) {
+                const liveFeed = require('./lib/liveFeed');
+                const senderPhone = sender.split('@')[0].replace(/\D/g, "");
+                const isGroupChat = isGroup;
+
+                let chatName = pushname || sender.split('@')[0];
+                if (isGroupChat) {
+                    try {
+                        const meta = await conn.groupMetadata(from);
+                        chatName = meta.subject || chatName;
+                    } catch {}
+                }
+
+                const botPhone = (conn.user?.id || "").split(":")[0]?.split("@")[0]?.replace(/\D/g, "") || null;
+
+                await liveFeed.push({
+                    sessionId: userId,
+                    type: "message",
+                    chatJid: from,
+                    chatName,
+                    isGroup: isGroupChat,
+                    senderJid: sender,
+                    senderName: pushname,
+                    senderPhone,
+                    recipientJid: conn.user?.id || null,
+                    recipientName: config.botName || "Bot",
+                    recipientPhone: botPhone,
+                    fromMe: false,
+                    text: body || `[${type}]`,
+                    mediaType: ["imageMessage","videoMessage","audioMessage","stickerMessage","documentMessage"].includes(type)
+                        ? type.replace("Message","").toLowerCase() : null,
+                    extra: { direction: "incoming", messageId: msg.key.id }
+                });
+            }
+        } catch (e) { console.error("liveFeed incoming:", e.message); }
+        // ============================================================
+
         // ================= RUN AUTO HOOKS =================
-        // Iterate every module with category:"auto" hooks and let it
-        // consume the message by returning `true`.
         for (const [, mod] of autoCache) {
             if (typeof mod.enabled === 'function' && !mod.enabled(config)) continue;
             if (typeof mod.onMessage !== 'function') continue;
             try {
                 const r = await mod.onMessage(conn, msg, cmdCtx);
-                if (r === true) return; // consumed — stop further processing
+                if (r === true) return;
             } catch (e) {
                 console.error(`auto/${mod.name}:`, e.message);
             }
         }
-        // ============================================================
-        //   ⬆️⬆️⬆️  END OF ADDED BLOCK  ⬆️⬆️⬆️
-        // ============================================================
 
         // ================= CHANNEL / NEWSLETTER =================
         if (isChannel) {
@@ -297,7 +330,7 @@ module.exports = async (conn, m, userId = "default") => {
 };
 
 // ============================================================
-//   ⬇️⬇️⬇️  THESE 2 EXPORTS WERE ADDED FOR GROUP/CALL EVENTS  ⬇️⬇️⬇️
+//   GROUP / CALL EVENT HOOKS
 // ============================================================
 module.exports.handleGroupUpdate = async (conn, update) => {
     try {
@@ -321,9 +354,6 @@ module.exports.handleCallEvent = async (conn, calls) => {
         }
     }
 };
-// ============================================================
-//   ⬆️⬆️⬆️  END OF ADDED EXPORTS  ⬆️⬆️⬆️
-// ============================================================
 
 // ================= EXPOSE FOR MENU =================
 module.exports.getCommandCache = () => commandCache;
