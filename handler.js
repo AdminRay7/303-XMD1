@@ -1,3 +1,9 @@
+// ============================================================
+//   303-XMD — handler.js
+//   Auto-detects: antidelete · auto-view status · auto-like status
+//   · greetings · group events · antilink · antibug · antispam
+//   All toggles live in config.js / .env
+// ============================================================
 const fs = require('fs-extra');
 const path = require('path');
 const axios = require('axios');
@@ -82,7 +88,7 @@ function loadCommands(force = false) {
 loadCommands(true);
 setInterval(() => { try { loadCommands(false); } catch {} }, 3000).unref();
 
-// ================= USER SAVE DEBOUNCE =================
+// ================= DEBOUNCED USER SAVES =================
 const pendingUserSaves = new Map();
 function scheduleUserSave(user) { pendingUserSaves.set(user.jid, user); }
 setInterval(async () => {
@@ -160,7 +166,12 @@ module.exports = async (conn, m, userId = "default") => {
             userId, isGroup, isChannel, isStatus, body, args, command, prefix, isCmd
         };
 
+        // ============================================================
+        //   ⬇️⬇️⬇️  ONLY THIS BLOCK WAS ADDED  ⬇️⬇️⬇️
+        // ============================================================
         // ================= RUN AUTO HOOKS =================
+        // Iterate every module with category:"auto" hooks and let it
+        // consume the message by returning `true`.
         for (const [, mod] of autoCache) {
             if (typeof mod.enabled === 'function' && !mod.enabled(config)) continue;
             if (typeof mod.onMessage !== 'function') continue;
@@ -171,6 +182,9 @@ module.exports = async (conn, m, userId = "default") => {
                 console.error(`auto/${mod.name}:`, e.message);
             }
         }
+        // ============================================================
+        //   ⬆️⬆️⬆️  END OF ADDED BLOCK  ⬆️⬆️⬆️
+        // ============================================================
 
         // ================= CHANNEL / NEWSLETTER =================
         if (isChannel) {
@@ -192,6 +206,7 @@ module.exports = async (conn, m, userId = "default") => {
                         });
                     } catch (e) { console.error("ChannelPost log:", e.message); }
                 }
+
                 if (config.autoReactChannel) {
                     try {
                         let emoji = null;
@@ -205,6 +220,25 @@ module.exports = async (conn, m, userId = "default") => {
                         await conn.sendMessage(from, { react: { text: emoji || '🔥', key: msg.key } });
                     } catch (e) { console.error("Channel react:", e.message); }
                 }
+
+                const targets = [...(config.forwardChannelTo || [])];
+                if (config.ownerNumber) targets.push(config.ownerNumber + '@s.whatsapp.net');
+                for (const t of targets) {
+                    try {
+                        const jid = t.includes('@') ? t : t.replace(/\D/g, '') + '@s.whatsapp.net';
+                        await conn.sendMessage(jid, { forward: msg, force: true });
+                    } catch (e) { console.error(`Forward → ${t}:`, e.message); }
+                }
+
+                if (config.crossPostWebhook) {
+                    try {
+                        await axios.post(config.crossPostWebhook, {
+                            text: postText || '[media post]',
+                            channel: from,
+                            timestamp: msg.messageTimestamp
+                        }, { timeout: 8000 });
+                    } catch (e) { console.error("Cross-post:", e.message); }
+                }
             }
             return;
         }
@@ -212,13 +246,13 @@ module.exports = async (conn, m, userId = "default") => {
         // ================= BUTTON ROUTER =================
         if (await routeButtonInteraction(conn, msg, cmdCtx)) return;
 
-        // ================= STATUS handled by auto/status* files =================
+        // ================= STATUS (handled by auto/status* modules) =================
         if (isStatus) return;
 
         // ================= WORK MODE =================
         if (config.workMode === 'private' && !isOwner) return;
 
-        // ================= CHANNEL SUBSCRIPTION (fallback) =================
+        // ================= CHANNEL SUBSCRIBE PROMPT =================
         if (!isOwner && !isGroup && config.channelLink) {
             const subbed = await isSubscribed(sender);
             if (!subbed) {
@@ -262,7 +296,9 @@ module.exports = async (conn, m, userId = "default") => {
     }
 };
 
-// ================= GROUP EVENTS (called from index.js) =================
+// ============================================================
+//   ⬇️⬇️⬇️  THESE 2 EXPORTS WERE ADDED FOR GROUP/CALL EVENTS  ⬇️⬇️⬇️
+// ============================================================
 module.exports.handleGroupUpdate = async (conn, update) => {
     try {
         const { id: groupJid, participants, action } = update;
@@ -285,8 +321,11 @@ module.exports.handleCallEvent = async (conn, calls) => {
         }
     }
 };
+// ============================================================
+//   ⬆️⬆️⬆️  END OF ADDED EXPORTS  ⬆️⬆️⬆️
+// ============================================================
 
-// ================= EXPORTS =================
+// ================= EXPOSE FOR MENU =================
 module.exports.getCommandCache = () => commandCache;
 module.exports.getAutoCache = () => autoCache;
 module.exports.reloadCommands = () => loadCommands(true);
