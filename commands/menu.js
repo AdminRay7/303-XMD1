@@ -13,37 +13,55 @@ function findMenuImage() {
     return img ? path.join(ASSETS_DIR, img) : null;
 }
 
-function scanCommands() {
-    if (!fs.existsSync(COMMANDS_DIR)) return [];
+function scanAll() {
+    if (!fs.existsSync(COMMANDS_DIR)) return { commands: [], auto: [] };
     const seen = new Set();
-    const list = [];
+    const commands = [];
+    const auto = [];
 
-    for (const item of fs.readdirSync(COMMANDS_DIR)) {
-        if (!item.endsWith('.js')) continue;
-        const itemPath = path.join(COMMANDS_DIR, item);
-        try {
-            delete require.cache[require.resolve(itemPath)];
-            const mod = require(itemPath);
-            if (!mod || typeof mod.execute !== 'function') continue;
-            if (seen.has(mod)) continue;
-            seen.add(mod);
+    const walk = (dir) => {
+        for (const item of fs.readdirSync(dir)) {
+            const itemPath = path.join(dir, item);
+            const stat = fs.statSync(itemPath);
+            if (stat.isDirectory()) walk(itemPath);
+            else if (item.endsWith('.js')) {
+                try {
+                    delete require.cache[require.resolve(itemPath)];
+                    const mod = require(itemPath);
+                    if (!mod || seen.has(mod)) continue;
+                    seen.add(mod);
 
-            list.push({
-                name: (mod.name || path.basename(item, '.js')).toLowerCase(),
-                category: (mod.category || 'general').toLowerCase()
-            });
-        } catch (e) {
-            console.error(`menu scan: ${itemPath}:`, e.message);
+                    const name = (mod.name || path.basename(itemPath, '.js')).toLowerCase();
+                    const category = (mod.category || 'general').toLowerCase();
+
+                    // Auto-detection module (has a hook but no execute)
+                    const isAuto = typeof mod.execute !== 'function' &&
+                        (typeof mod.onMessage === 'function' ||
+                         typeof mod.onCall === 'function' ||
+                         typeof mod.onGroupJoin === 'function' ||
+                         typeof mod.onGroupLeave === 'function');
+
+                    if (typeof mod.execute === 'function') {
+                        commands.push({ name, category });
+                    } else if (isAuto) {
+                        auto.push({ name, category });
+                    }
+                } catch (e) {
+                    console.error(`scan: ${itemPath}:`, e.message);
+                }
+            }
         }
-    }
-    return list;
+    };
+    walk(COMMANDS_DIR);
+    return { commands, auto };
 }
 
-function buildMenuText(cmds, ctx) {
+function buildMenuText(commands, auto, ctx) {
     const groups = {};
-    for (const c of cmds) {
-        if (!groups[c.category]) groups[c.category] = [];
-        groups[c.category].push(c.name);
+    for (const c of [...commands, ...auto]) {
+        const cat = c.category || 'general';
+        if (!groups[cat]) groups[cat] = [];
+        groups[cat].push(c.name);
     }
 
     const catOrder = Object.keys(groups).sort((a, b) => {
@@ -78,10 +96,11 @@ module.exports = {
     aliases: ['help', 'commands', 'cmds'],
     async execute(conn, msg, args, ctx) {
         const { from } = ctx;
-        const cmds = scanCommands();
-        if (!cmds.length) return conn.sendMessage(from, { text: 'No commands found.' }, { quoted: msg });
-
-        const text = buildMenuText(cmds, ctx);
+        const { commands, auto } = scanAll();
+        if (!commands.length && !auto.length) {
+            return conn.sendMessage(from, { text: 'No commands found.' }, { quoted: msg });
+        }
+        const text = buildMenuText(commands, auto, ctx);
         const imgPath = findMenuImage();
         if (imgPath) {
             try {
