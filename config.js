@@ -22,12 +22,17 @@ module.exports = {
     ownerNumber: str(process.env.OWNER_NUMBER, "254794376595"),
     ownerName:   str(process.env.OWNER_NAME,   "mr presenter"),
 
-    // Admin email — single string (used by frontend / sidebar)
+    // Admin email — single string
     adminEmail:  str(process.env.ADMIN_EMAIL,  "ryanobanga243@gmail.com"),
 
-    // Admin emails — array (used by index.js / server-side checks)
+    // Admin emails — array
     adminEmails: list(process.env.ADMIN_EMAIL, ["ryanobanga243@gmail.com"])
                     .map(e => e.toLowerCase()),
+
+    // ---- AI chat (NEW) ----
+    aiChatEnabled:  bool(process.env.AI_CHAT_ENABLED, false),
+    aiSystemPrompt: str(process.env.AI_SYSTEM_PROMPT,
+        "You are 303-XMD, a friendly WhatsApp assistant. Keep replies under 300 chars unless asked for detail."),
 
     prefix:      str(process.env.PREFIX,       "."),
     footer:      str(process.env.FOOTER,       "303-XMD — THE LAST KEY"),
@@ -78,6 +83,12 @@ module.exports = {
         like:  bool(process.env.AUTO_STATUS_LIKE,  true),
         reply: bool(process.env.AUTO_STATUS_REPLY, false)
     },
+
+    // ---- Auto-detect toggles ----
+    autoGreet:       bool(process.env.AUTO_GREET,       true),
+    welcomeMessage:  bool(process.env.WELCOME_MESSAGE,  true),
+    goodbyeMessage:  bool(process.env.GOODBYE_MESSAGE,  true),
+    statusReplyText: str(process.env.STATUS_REPLY_TEXT, "Nice status! ✨"),
 
     autoblock: list(process.env.AUTOBLOCK, []),
 
