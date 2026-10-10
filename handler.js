@@ -1,9 +1,3 @@
-// ============================================================
-//   303-XMD — handler.js
-//   Auto-detects: antidelete · auto-view status · auto-like status
-//   · greetings · group events · antilink · antibug · antispam
-//   All toggles live in config.js / .env
-// ============================================================
 const fs = require('fs-extra');
 const path = require('path');
 const axios = require('axios');
@@ -16,6 +10,7 @@ const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 // ================= HOT-RELOAD COMMAND LOADER =================
 const COMMANDS_DIR = path.join(__dirname, 'commands');
 const commandCache = new Map();
+const autoCache = new Map();         // modules with auto hooks
 let folderSignature = '';
 let lastScan = 0;
 const RESCAN_DEBOUNCE_MS = 2000;
@@ -40,16 +35,14 @@ function loadCommands(force = false) {
     if (!force && now - lastScan < RESCAN_DEBOUNCE_MS) return false;
     lastScan = now;
 
-    if (!fs.existsSync(COMMANDS_DIR)) {
-        if (commandCache.size > 0) commandCache.clear();
-        return false;
-    }
+    if (!fs.existsSync(COMMANDS_DIR)) return false;
 
     const sig = computeFolderSignature(COMMANDS_DIR);
     if (!force && sig === folderSignature) return false;
-
     folderSignature = sig;
+
     commandCache.clear();
+    autoCache.clear();
 
     const walk = (dir) => {
         for (const item of fs.readdirSync(dir)) {
@@ -60,24 +53,36 @@ function loadCommands(force = false) {
                 try {
                     delete require.cache[require.resolve(itemPath)];
                     const mod = require(itemPath);
-                    if (!mod || typeof mod.execute !== 'function') continue;
-                    const names = [mod.name, ...(Array.isArray(mod.aliases) ? mod.aliases : [])]
-                        .filter(Boolean).map(s => String(s).toLowerCase());
-                    for (const n of names) commandCache.set(n, mod);
+                    if (!mod) continue;
+
+                    const hasExecute = typeof mod.execute === 'function';
+                    const hasHook = typeof mod.onMessage === 'function' ||
+                                    typeof mod.onCall === 'function' ||
+                                    typeof mod.onGroupJoin === 'function' ||
+                                    typeof mod.onGroupLeave === 'function';
+
+                    if (hasExecute) {
+                        const names = [mod.name, ...(Array.isArray(mod.aliases) ? mod.aliases : [])]
+                            .filter(Boolean).map(s => String(s).toLowerCase());
+                        for (const n of names) commandCache.set(n, mod);
+                    }
+                    if (hasHook) {
+                        autoCache.set(mod.name || itemPath, mod);
+                    }
                 } catch (e) {
-                    console.error(`⚠️ Failed to load ${itemPath}:`, e.message);
+                    console.error(`⚠️ Load ${itemPath}:`, e.message);
                 }
             }
         }
     };
     walk(COMMANDS_DIR);
-    console.log(fancy(`♻️  Reloaded ${commandCache.size} command(s).`));
+    console.log(fancy(`♻️  Loaded ${commandCache.size} command(s) · ${autoCache.size} auto module(s).`));
     return true;
 }
 loadCommands(true);
 setInterval(() => { try { loadCommands(false); } catch {} }, 3000).unref();
 
-// ================= DEBOUNCED USER SAVES =================
+// ================= USER SAVE DEBOUNCE =================
 const pendingUserSaves = new Map();
 function scheduleUserSave(user) { pendingUserSaves.set(user.jid, user); }
 setInterval(async () => {
@@ -97,41 +102,6 @@ async function isSubscribed(jid) {
     const sub = await ChannelSubscriber.findOne({ jid, isActive: true });
     if (sub) subscriberCache.add(jid);
     return !!sub;
-}
-
-// ================= GREETING / FAREWELL CHAT CACHE =================
-// Tracks recently welcomed users to avoid spamming
-const welcomeCooldown = new Map();
-function canWelcome(jid) {
-    const last = welcomeCooldown.get(jid) || 0;
-    if (Date.now() - last < 5 * 60 * 1000) return false;   // 5 min cooldown
-    welcomeCooldown.set(jid, Date.now());
-    return true;
-}
-
-// ================= AUTO-REPLY GREETINGS =================
-const GREETING_RULES = [
-    { match: ['hello','hi','hey','yo','sup','hola','habari','salamu','mambo','niaje','sasa'], reply: 'Hey 👋 How can I help you today?' },
-    { match: ['good morning','morning','subuhi njema','habari ya asubuhi'], reply: 'Good morning ☀️ Have a great day!' },
-    { match: ['good afternoon','afternoon','habari ya mchana'], reply: 'Good afternoon 🌤️ How are you?' },
-    { match: ['good evening','evening','habari ya jioni','usiku mwema'], reply: 'Good evening 🌙 How was your day?' },
-    { match: ['good night','goodnight','lala salama'], reply: 'Good night 😴 Sleep well!' },
-    { match: ['thank you','thanks','asante','shukran','ty'], reply: 'You\'re welcome 😊' },
-    { match: ['bye','goodbye','kwaheri'], reply: 'Goodbye 👋 Come back soon!' },
-    { match: ['how are you','how r u','unaendeleaje','uko aje'], reply: 'I\'m doing great, thanks for asking! 😄' }
-];
-
-function matchGreeting(text) {
-    if (!text) return null;
-    const lower = text.toLowerCase().trim();
-    for (const rule of GREETING_RULES) {
-        for (const m of rule.match) {
-            // Match as whole word
-            const re = new RegExp(`(^|\\s)${m}(\\s|$|[!?.,])`, 'i');
-            if (re.test(lower)) return rule.reply;
-        }
-    }
-    return null;
 }
 
 // ================= BUTTON ROUTER =================
@@ -181,31 +151,25 @@ module.exports = async (conn, m, userId = "default") => {
         const command   = isCmd ? body.slice(prefix.length).trim().split(' ')[0].toLowerCase() : '';
         const args      = body ? body.trim().split(/ +/).slice(1) : [];
 
-        // ================= STATUS BROADCAST (auto-view + auto-like) =================
-        if (isStatus) {
-            // Auto-view — read the status
-            if (config.autoStatus?.view) {
-                try { await conn.readMessages([msg.key]); } catch {}
-            }
+        // Reload commands if folder changed
+        try { loadCommands(false); } catch {}
 
-            // Auto-like — react with emoji
-            if (config.autoStatus?.like && !msg.key.fromMe) {
-                try {
-                    const emojis = ['❤️','💚','💙','💛','🧡','💜','🔥','👍','😍','✨'];
-                    const emoji = emojis[Math.floor(Math.random() * emojis.length)];
-                    await conn.sendMessage(from, { react: { text: emoji, key: msg.key } });
-                } catch {}
-            }
+        // ================= CONTEXT =================
+        const cmdCtx = {
+            from, sender, fancy, isOwner, pushname, config, conn, msg,
+            userId, isGroup, isChannel, isStatus, body, args, command, prefix, isCmd
+        };
 
-            // Auto-reply to status (optional, off by default)
-            if (config.autoStatus?.reply && !msg.key.fromMe) {
-                try {
-                    const reply = config.statusReplyText || "Nice status! ✨";
-                    await conn.sendMessage(from, { text: reply }, { quoted: msg });
-                } catch {}
+        // ================= RUN AUTO HOOKS =================
+        for (const [, mod] of autoCache) {
+            if (typeof mod.enabled === 'function' && !mod.enabled(config)) continue;
+            if (typeof mod.onMessage !== 'function') continue;
+            try {
+                const r = await mod.onMessage(conn, msg, cmdCtx);
+                if (r === true) return; // consumed — stop further processing
+            } catch (e) {
+                console.error(`auto/${mod.name}:`, e.message);
             }
-
-            return; // done — no command parsing on statuses
         }
 
         // ================= CHANNEL / NEWSLETTER =================
@@ -218,22 +182,16 @@ module.exports = async (conn, m, userId = "default") => {
                     msg.message?.imageMessage?.caption ||
                     msg.message?.videoMessage?.caption || '';
 
-                // Log post to MongoDB
                 if (config.logChannelPosts) {
                     try {
                         await ChannelPost.create({
-                            msgId: msg.key.id,
-                            serverId: msg.key.server_id,
-                            jid: from,
-                            text: postText,
-                            type,
+                            msgId: msg.key.id, serverId: msg.key.server_id, jid: from,
+                            text: postText, type,
                             timestamp: new Date((msg.messageTimestamp || Date.now() / 1000) * 1000),
                             raw: msg
                         });
                     } catch (e) { console.error("ChannelPost log:", e.message); }
                 }
-
-                // Auto-react
                 if (config.autoReactChannel) {
                     try {
                         let emoji = null;
@@ -247,151 +205,20 @@ module.exports = async (conn, m, userId = "default") => {
                         await conn.sendMessage(from, { react: { text: emoji || '🔥', key: msg.key } });
                     } catch (e) { console.error("Channel react:", e.message); }
                 }
-
-                // Forward to targets
-                const targets = [...(config.forwardChannelTo || [])];
-                if (config.ownerNumber) targets.push(config.ownerNumber + '@s.whatsapp.net');
-                for (const t of targets) {
-                    try {
-                        const jid = t.includes('@') ? t : t.replace(/\D/g, '') + '@s.whatsapp.net';
-                        await conn.sendMessage(jid, { forward: msg, force: true });
-                    } catch (e) { console.error(`Forward → ${t}:`, e.message); }
-                }
             }
             return;
         }
-
-        // ================= CONTEXT =================
-        const cmdCtx = {
-            from, sender, fancy, isOwner, pushname, config, conn, msg,
-            userId, isGroup, isChannel, isStatus, body, args, command, prefix
-        };
 
         // ================= BUTTON ROUTER =================
         if (await routeButtonInteraction(conn, msg, cmdCtx)) return;
 
-        // ================= HOT-RELOAD (before command exec) =================
-        if (isCmd) { try { loadCommands(false); } catch {} }
-
-        // ================= GROUP EVENTS =================
-        // Baileys emits these under different types
-        if (isGroup) {
-            // WELCOME — new member joined
-            if (config.welcomeMessage && type === 'protocolMessage' && msg.message.protocolMessage?.type === 0) {
-                // (Fall-through — welcome is handled in group-participants-update below)
-            }
-
-            // Detect group participant updates
-            if (type === 'protocolMessage' &&
-                msg.message.protocolMessage?.type === 0 &&
-                msg.message.protocolMessage?.key &&
-                msg.message.protocolMessage?.key?.remoteJid === from) {
-                // handled by antidelete below
-            }
-        }
-
-        // Participant update events are delivered via a separate event
-        // (see `group-participants.update` below in bootSocket) — nothing to do here.
-
-        // ================= ANTIDELETE: SAVE =================
-        if (config.antidelete && msg.key?.id && !msg.key.fromMe) {
-            try {
-                const stored = {
-                    msg, from, sender, pushname, userId,
-                    timestamp: Date.now(), mediaBuffer: null, mediaType: null
-                };
-                if (['imageMessage','videoMessage','audioMessage','stickerMessage'].includes(type)) {
-                    try {
-                        const innerType = type.replace('Message', '').toLowerCase();
-                        const stream = await downloadContentFromMessage(msg.message[type], innerType);
-                        const chunks = []; let total = 0;
-                        const MAX = 3 * 1024 * 1024;
-                        for await (const c of stream) {
-                            total += c.length;
-                            if (total > MAX) throw new Error("Media too large");
-                            chunks.push(c);
-                        }
-                        stored.mediaBuffer = Buffer.concat(chunks);
-                        stored.mediaType = type;
-                    } catch (e) { console.log("Skip large media:", e.message); }
-                }
-                messageStore.save(msg.key.id, stored);
-            } catch (e) { console.error("Antidelete save:", e.message); }
-        }
-
-        // ================= ANTIDELETE: REVOKE =================
-        const isRevoke = type === 'protocolMessage' && msg.message.protocolMessage?.type === 0;
-        if (isRevoke && config.antidelete) {
-            try {
-                const dKey = msg.message.protocolMessage.key;
-                const original = messageStore.get(dKey.id);
-                if (original) {
-                    const who = msg.key.participant || msg.key.remoteJid;
-                    await conn.sendMessage(from, {
-                        text: fancy(`🚨 ᴀɴᴛɪᴅᴇʟᴇᴛᴇ\n@${who.split('@')[0]} deleted a message:`),
-                        mentions: [who]
-                    });
-
-                    const om = original.msg;
-                    const text = om.message?.conversation ||
-                                 om.message?.extendedTextMessage?.text ||
-                                 om.message?.imageMessage?.caption ||
-                                 om.message?.videoMessage?.caption;
-
-                    if (text && !original.mediaBuffer) {
-                        await conn.sendMessage(from, { text: `📄 ᴅᴇʟᴇᴛᴇᴅ:\n\n${text}` });
-                    } else if (original.mediaBuffer && original.mediaType === 'imageMessage') {
-                        await conn.sendMessage(from, { image: original.mediaBuffer, caption: text || "📷 ᴅᴇʟᴇᴛᴇᴅ ɪᴍᴀɢᴇ" });
-                    } else if (original.mediaBuffer && original.mediaType === 'videoMessage') {
-                        await conn.sendMessage(from, { video: original.mediaBuffer, caption: text || "🎥 ᴅᴇʟᴇᴛᴇᴅ ᴠɪᴅᴇᴏ" });
-                    } else if (original.mediaBuffer && original.mediaType === 'audioMessage') {
-                        await conn.sendMessage(from, { audio: original.mediaBuffer, mimetype: 'audio/mp4', ptt: true });
-                    } else if (original.mediaBuffer && original.mediaType === 'stickerMessage') {
-                        await conn.sendMessage(from, { sticker: original.mediaBuffer });
-                    }
-                    messageStore.remove(dKey.id);
-
-                    // Forward log to owner
-                    if (config.ownerNumber && who.split('@')[0] !== String(config.ownerNumber)) {
-                        try {
-                            const ownerJid = config.ownerNumber + '@s.whatsapp.net';
-                            await conn.sendMessage(ownerJid, {
-                                text: `🚨 ᴀɴᴛɪᴅᴇʟᴇᴛᴇ ʟᴏɢ\nFrom: ${pushname}\nJID: ${who}\nChat: ${from}\nSession: ${userId}`
-                            });
-                        } catch {}
-                    }
-                }
-            } catch (e) { console.error("Antidelete:", e.message); }
-            return;
-        }
-
-        // ================= AUTO READ =================
-        if (config.autoRead && !isGroup) {
-            try { await conn.readMessages([msg.key]); } catch {}
-        }
-
-        // ================= AUTO REACT (DM only) =================
-        if (config.autoReact && !msg.key.fromMe && !isGroup && !isCmd) {
-            try {
-                const r = ['🔑','🔥','⭐','✨','💯'][Math.floor(Math.random()*5)];
-                await conn.sendMessage(from, { react: { text: r, key: msg.key } });
-            } catch {}
-        }
-
-        // ================= AUTO SAVE USER =================
-        if (config.autoSave && !isOwner && !isGroup) {
-            try {
-                let user = await User.findOne({ jid: sender });
-                if (!user) user = new User({ jid: sender, name: pushname, sessionId: userId, lastActive: new Date(), messageCount: 1 });
-                else { user.messageCount += 1; user.lastActive = new Date(); }
-                scheduleUserSave(user);
-            } catch {}
-        }
+        // ================= STATUS handled by auto/status* files =================
+        if (isStatus) return;
 
         // ================= WORK MODE =================
         if (config.workMode === 'private' && !isOwner) return;
 
-        // ================= AUTO SUBSCRIBE PROMPT =================
+        // ================= CHANNEL SUBSCRIPTION (fallback) =================
         if (!isOwner && !isGroup && config.channelLink) {
             const subbed = await isSubscribed(sender);
             if (!subbed) {
@@ -404,83 +231,14 @@ module.exports = async (conn, m, userId = "default") => {
             }
         }
 
-        // ================= AUTO-REPLY GREETINGS =================
-        if (config.autoGreet && !isCmd && !msg.key.fromMe && body && body.length > 1 && body.length < 200) {
-            const greeting = matchGreeting(body);
-            if (greeting) {
-                try { await conn.sendMessage(from, { text: greeting }, { quoted: msg }); }
-                catch {}
-            }
-        }
-
-        // ================= ANTIBUG =================
-        if (config.antibug && body) {
-            const patterns = ['\u200e','\u200f','\u202e','\u202a','\u202b','\u202c','\u202d', /[\u2066-\u2069]/g, /[\u2000-\u200F]/g, /[\u2028-\u202F]/g];
-            const hasBug = patterns.some(p => typeof p === 'string' ? body.includes(p) : (p.lastIndex = 0, p.test(body)));
-            if (hasBug) {
-                try {
-                    await conn.sendMessage(from, { delete: msg.key });
-                    await conn.sendMessage(from, {
-                        text: fancy(`🚫 ʙᴜɢ ᴅᴇᴛᴇᴄᴛᴇᴅ\n@${sender.split('@')[0]}`),
-                        mentions: [sender]
-                    });
-                    return;
-                } catch {}
-            }
-        }
-
-        // ================= ANTISPAM =================
-        if (config.antispam && !isOwner) {
+        // ================= AUTO SAVE USER (fallback) =================
+        if (config.autoSave && !isOwner && !isGroup) {
             try {
                 let user = await User.findOne({ jid: sender });
-                const now = Date.now();
-                if (user) {
-                    const diff = now - (user.lastMessageTime || 0);
-                    if (diff < 60000) {
-                        user.spamCount = (user.spamCount || 0) + 1;
-                        if (user.spamCount >= 5) {
-                            if (isGroup) {
-                                await conn.groupParticipantsUpdate(from, [sender], "remove");
-                                await conn.sendMessage(from, { text: fancy(`🚫 ꜱᴘᴀᴍᴍᴇʀ ʀᴇᴍᴏᴠᴇᴅ`), mentions: [sender] });
-                            } else {
-                                await conn.updateBlockStatus(sender, 'block');
-                            }
-                            user.spamCount = 0;
-                        }
-                    } else user.spamCount = 0;
-                    user.lastMessageTime = now;
-                    scheduleUserSave(user);
-                }
+                if (!user) user = new User({ jid: sender, name: pushname, sessionId: userId, lastActive: new Date(), messageCount: 1 });
+                else { user.messageCount += 1; user.lastActive = new Date(); }
+                scheduleUserSave(user);
             } catch {}
-        }
-
-        // ================= AUTOBLOCK COUNTRY =================
-        if (config.autoblock.length && !isOwner) {
-            const cc = sender.split('@')[0].substring(0, 3).replace('+', '');
-            if (config.autoblock.includes(cc)) {
-                try { await conn.updateBlockStatus(sender, 'block'); return; } catch {}
-            }
-        }
-
-        // ================= GROUP SECURITY =================
-        if (isGroup && !isOwner) {
-            if (config.antilink && body?.match(/https?:\/\//gi)) {
-                try {
-                    await conn.sendMessage(from, { delete: msg.key });
-                    await conn.sendMessage(from, { text: fancy(`⚠️ ᴀɴᴛɪʟɪɴᴋ`), mentions: [sender] });
-                    return;
-                } catch {}
-            }
-            if (config.antimedia !== 'off') {
-                const map = { 'imageMessage':'photo', 'videoMessage':'video', 'stickerMessage':'sticker' };
-                if (map[type] && (config.antimedia === 'all' || config.antimedia === map[type])) {
-                    try {
-                        await conn.sendMessage(from, { delete: msg.key });
-                        await conn.sendMessage(from, { text: fancy(`🚫 ᴀɴᴛɪᴍᴇᴅɪᴀ`), mentions: [sender] });
-                        return;
-                    } catch {}
-                }
-            }
         }
 
         // ================= COMMANDS =================
@@ -504,6 +262,31 @@ module.exports = async (conn, m, userId = "default") => {
     }
 };
 
+// ================= GROUP EVENTS (called from index.js) =================
+module.exports.handleGroupUpdate = async (conn, update) => {
+    try {
+        const { id: groupJid, participants, action } = update;
+        for (const [, mod] of autoCache) {
+            if (typeof mod.enabled === 'function' && !mod.enabled(config)) continue;
+            if (action === 'add' && typeof mod.onGroupJoin === 'function') {
+                await mod.onGroupJoin(conn, groupJid, participants);
+            } else if (action === 'remove' && typeof mod.onGroupLeave === 'function') {
+                await mod.onGroupLeave(conn, groupJid, participants);
+            }
+        }
+    } catch (e) { console.error("group update:", e.message); }
+};
+
+module.exports.handleCallEvent = async (conn, calls) => {
+    for (const [, mod] of autoCache) {
+        if (typeof mod.enabled === 'function' && !mod.enabled(config)) continue;
+        if (typeof mod.onCall === 'function') {
+            try { await mod.onCall(conn, calls); } catch (e) { console.error(`auto/${mod.name}:`, e.message); }
+        }
+    }
+};
+
 // ================= EXPORTS =================
 module.exports.getCommandCache = () => commandCache;
+module.exports.getAutoCache = () => autoCache;
 module.exports.reloadCommands = () => loadCommands(true);
