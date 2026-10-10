@@ -1,3 +1,9 @@
+// ============================================================
+//   303-XMD — handler.js
+//   Auto-detects: antidelete · auto-view status · auto-like status
+//   · greetings · group events · antilink · antibug · antispam
+//   All toggles live in config.js / .env
+// ============================================================
 const fs = require('fs-extra');
 const path = require('path');
 const axios = require('axios');
@@ -8,19 +14,12 @@ const messageStore = require('./lib/messageStore');
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 
 // ================= HOT-RELOAD COMMAND LOADER =================
-// Watches /commands folder. Reloads on change (add / edit / delete).
-// No restart required. Subfolders become categories.
-
 const COMMANDS_DIR = path.join(__dirname, 'commands');
 const commandCache = new Map();
 let folderSignature = '';
 let lastScan = 0;
 const RESCAN_DEBOUNCE_MS = 2000;
 
-/**
- * Compute a signature of the commands folder.
- * Any file add/remove/mtime change alters this string.
- */
 function computeFolderSignature(dir) {
     if (!fs.existsSync(dir)) return '';
     const parts = [];
@@ -29,9 +28,7 @@ function computeFolderSignature(dir) {
             const full = path.join(d, item);
             const stat = fs.statSync(full);
             if (stat.isDirectory()) walk(full);
-            else if (item.endsWith('.js')) {
-                parts.push(`${item}:${stat.mtimeMs}`);
-            }
+            else if (item.endsWith('.js')) parts.push(`${item}:${stat.mtimeMs}`);
         }
     };
     walk(dir);
@@ -44,10 +41,7 @@ function loadCommands(force = false) {
     lastScan = now;
 
     if (!fs.existsSync(COMMANDS_DIR)) {
-        if (commandCache.size > 0) {
-            commandCache.clear();
-            console.log(fancy('📂 No commands folder — cache cleared.'));
-        }
+        if (commandCache.size > 0) commandCache.clear();
         return false;
     }
 
@@ -61,53 +55,33 @@ function loadCommands(force = false) {
         for (const item of fs.readdirSync(dir)) {
             const itemPath = path.join(dir, item);
             const stat = fs.statSync(itemPath);
-            if (stat.isDirectory()) {
-                walk(itemPath);
-            } else if (item.endsWith('.js')) {
+            if (stat.isDirectory()) walk(itemPath);
+            else if (item.endsWith('.js')) {
                 try {
-                    // Bust require cache so edits take effect
                     delete require.cache[require.resolve(itemPath)];
                     const mod = require(itemPath);
                     if (!mod || typeof mod.execute !== 'function') continue;
-
-                    const names = [
-                        mod.name,
-                        ...(Array.isArray(mod.aliases) ? mod.aliases : [])
-                    ].filter(Boolean).map(s => String(s).toLowerCase());
-
-                    for (const n of names) {
-                        if (commandCache.has(n)) {
-                            console.warn(fancy(`⚠️ Duplicate command: ${n} (${item})`));
-                        }
-                        commandCache.set(n, mod);
-                    }
+                    const names = [mod.name, ...(Array.isArray(mod.aliases) ? mod.aliases : [])]
+                        .filter(Boolean).map(s => String(s).toLowerCase());
+                    for (const n of names) commandCache.set(n, mod);
                 } catch (e) {
                     console.error(`⚠️ Failed to load ${itemPath}:`, e.message);
                 }
             }
         }
     };
-
     walk(COMMANDS_DIR);
     console.log(fancy(`♻️  Reloaded ${commandCache.size} command(s).`));
     return true;
 }
-
-// Initial scan
 loadCommands(true);
-
-// Background watcher (safe if nothing changes)
-setInterval(() => {
-    try { loadCommands(false); } catch (e) { console.error('Command watch:', e.message); }
-}, 3000).unref();
+setInterval(() => { try { loadCommands(false); } catch {} }, 3000).unref();
 
 // ================= DEBOUNCED USER SAVES =================
 const pendingUserSaves = new Map();
 function scheduleUserSave(user) { pendingUserSaves.set(user.jid, user); }
 setInterval(async () => {
-    for (const [, user] of pendingUserSaves) {
-        try { await user.save(); } catch {}
-    }
+    for (const [, user] of pendingUserSaves) { try { await user.save(); } catch {} }
     pendingUserSaves.clear();
 }, 30000).unref();
 
@@ -125,6 +99,41 @@ async function isSubscribed(jid) {
     return !!sub;
 }
 
+// ================= GREETING / FAREWELL CHAT CACHE =================
+// Tracks recently welcomed users to avoid spamming
+const welcomeCooldown = new Map();
+function canWelcome(jid) {
+    const last = welcomeCooldown.get(jid) || 0;
+    if (Date.now() - last < 5 * 60 * 1000) return false;   // 5 min cooldown
+    welcomeCooldown.set(jid, Date.now());
+    return true;
+}
+
+// ================= AUTO-REPLY GREETINGS =================
+const GREETING_RULES = [
+    { match: ['hello','hi','hey','yo','sup','hola','habari','salamu','mambo','niaje','sasa'], reply: 'Hey 👋 How can I help you today?' },
+    { match: ['good morning','morning','subuhi njema','habari ya asubuhi'], reply: 'Good morning ☀️ Have a great day!' },
+    { match: ['good afternoon','afternoon','habari ya mchana'], reply: 'Good afternoon 🌤️ How are you?' },
+    { match: ['good evening','evening','habari ya jioni','usiku mwema'], reply: 'Good evening 🌙 How was your day?' },
+    { match: ['good night','goodnight','lala salama'], reply: 'Good night 😴 Sleep well!' },
+    { match: ['thank you','thanks','asante','shukran','ty'], reply: 'You\'re welcome 😊' },
+    { match: ['bye','goodbye','kwaheri'], reply: 'Goodbye 👋 Come back soon!' },
+    { match: ['how are you','how r u','unaendeleaje','uko aje'], reply: 'I\'m doing great, thanks for asking! 😄' }
+];
+
+function matchGreeting(text) {
+    if (!text) return null;
+    const lower = text.toLowerCase().trim();
+    for (const rule of GREETING_RULES) {
+        for (const m of rule.match) {
+            // Match as whole word
+            const re = new RegExp(`(^|\\s)${m}(\\s|$|[!?.,])`, 'i');
+            if (re.test(lower)) return rule.reply;
+        }
+    }
+    return null;
+}
+
 // ================= BUTTON ROUTER =================
 async function routeButtonInteraction(conn, msg, ctx) {
     const buttonId =
@@ -132,7 +141,6 @@ async function routeButtonInteraction(conn, msg, ctx) {
         msg.message?.templateButtonReplyMessage?.selectedId ||
         msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId;
     if (!buttonId) return false;
-
     const seen = new Set();
     for (const [, mod] of commandCache) {
         if (seen.has(mod)) continue;
@@ -141,9 +149,7 @@ async function routeButtonInteraction(conn, msg, ctx) {
             try {
                 const handled = await mod.handleButton(conn, msg, buttonId, ctx);
                 if (handled === true || handled === undefined) return true;
-            } catch (e) {
-                console.error("handleButton error:", e.message);
-            }
+            } catch (e) { console.error("handleButton:", e.message); }
         }
     }
     return false;
@@ -168,11 +174,39 @@ module.exports = async (conn, m, userId = "default") => {
 
         const isGroup   = from.endsWith('@g.us');
         const isChannel = from.endsWith('@newsletter');
+        const isStatus  = from === 'status@broadcast';
         const isOwner   = String(config.ownerNumber).includes(sender.split('@')[0]) || msg.key.fromMe;
         const prefix    = config.prefix;
         const isCmd     = body && body.startsWith(prefix);
         const command   = isCmd ? body.slice(prefix.length).trim().split(' ')[0].toLowerCase() : '';
         const args      = body ? body.trim().split(/ +/).slice(1) : [];
+
+        // ================= STATUS BROADCAST (auto-view + auto-like) =================
+        if (isStatus) {
+            // Auto-view — read the status
+            if (config.autoStatus?.view) {
+                try { await conn.readMessages([msg.key]); } catch {}
+            }
+
+            // Auto-like — react with emoji
+            if (config.autoStatus?.like && !msg.key.fromMe) {
+                try {
+                    const emojis = ['❤️','💚','💙','💛','🧡','💜','🔥','👍','😍','✨'];
+                    const emoji = emojis[Math.floor(Math.random() * emojis.length)];
+                    await conn.sendMessage(from, { react: { text: emoji, key: msg.key } });
+                } catch {}
+            }
+
+            // Auto-reply to status (optional, off by default)
+            if (config.autoStatus?.reply && !msg.key.fromMe) {
+                try {
+                    const reply = config.statusReplyText || "Nice status! ✨";
+                    await conn.sendMessage(from, { text: reply }, { quoted: msg });
+                } catch {}
+            }
+
+            return; // done — no command parsing on statuses
+        }
 
         // ================= CHANNEL / NEWSLETTER =================
         if (isChannel) {
@@ -184,6 +218,7 @@ module.exports = async (conn, m, userId = "default") => {
                     msg.message?.imageMessage?.caption ||
                     msg.message?.videoMessage?.caption || '';
 
+                // Log post to MongoDB
                 if (config.logChannelPosts) {
                     try {
                         await ChannelPost.create({
@@ -198,6 +233,7 @@ module.exports = async (conn, m, userId = "default") => {
                     } catch (e) { console.error("ChannelPost log:", e.message); }
                 }
 
+                // Auto-react
                 if (config.autoReactChannel) {
                     try {
                         let emoji = null;
@@ -212,6 +248,7 @@ module.exports = async (conn, m, userId = "default") => {
                     } catch (e) { console.error("Channel react:", e.message); }
                 }
 
+                // Forward to targets
                 const targets = [...(config.forwardChannelTo || [])];
                 if (config.ownerNumber) targets.push(config.ownerNumber + '@s.whatsapp.net');
                 for (const t of targets) {
@@ -220,16 +257,6 @@ module.exports = async (conn, m, userId = "default") => {
                         await conn.sendMessage(jid, { forward: msg, force: true });
                     } catch (e) { console.error(`Forward → ${t}:`, e.message); }
                 }
-
-                if (config.crossPostWebhook) {
-                    try {
-                        await axios.post(config.crossPostWebhook, {
-                            text: postText || '[media post]',
-                            channel: from,
-                            timestamp: msg.messageTimestamp
-                        }, { timeout: 8000 });
-                    } catch (e) { console.error("Cross-post:", e.message); }
-                }
             }
             return;
         }
@@ -237,16 +264,34 @@ module.exports = async (conn, m, userId = "default") => {
         // ================= CONTEXT =================
         const cmdCtx = {
             from, sender, fancy, isOwner, pushname, config, conn, msg,
-            userId, isGroup, isChannel, body, args, command, prefix
+            userId, isGroup, isChannel, isStatus, body, args, command, prefix
         };
 
         // ================= BUTTON ROUTER =================
         if (await routeButtonInteraction(conn, msg, cmdCtx)) return;
 
-        // ================= HOT-RELOAD CHECK (before command exec) =================
-        if (isCmd) {
-            try { loadCommands(false); } catch (e) { console.error('Hot reload:', e.message); }
+        // ================= HOT-RELOAD (before command exec) =================
+        if (isCmd) { try { loadCommands(false); } catch {} }
+
+        // ================= GROUP EVENTS =================
+        // Baileys emits these under different types
+        if (isGroup) {
+            // WELCOME — new member joined
+            if (config.welcomeMessage && type === 'protocolMessage' && msg.message.protocolMessage?.type === 0) {
+                // (Fall-through — welcome is handled in group-participants-update below)
+            }
+
+            // Detect group participant updates
+            if (type === 'protocolMessage' &&
+                msg.message.protocolMessage?.type === 0 &&
+                msg.message.protocolMessage?.key &&
+                msg.message.protocolMessage?.key?.remoteJid === from) {
+                // handled by antidelete below
+            }
         }
+
+        // Participant update events are delivered via a separate event
+        // (see `group-participants.update` below in bootSocket) — nothing to do here.
 
         // ================= ANTIDELETE: SAVE =================
         if (config.antidelete && msg.key?.id && !msg.key.fromMe) {
@@ -255,7 +300,6 @@ module.exports = async (conn, m, userId = "default") => {
                     msg, from, sender, pushname, userId,
                     timestamp: Date.now(), mediaBuffer: null, mediaType: null
                 };
-
                 if (['imageMessage','videoMessage','audioMessage','stickerMessage'].includes(type)) {
                     try {
                         const innerType = type.replace('Message', '').toLowerCase();
@@ -306,16 +350,28 @@ module.exports = async (conn, m, userId = "default") => {
                         await conn.sendMessage(from, { sticker: original.mediaBuffer });
                     }
                     messageStore.remove(dKey.id);
+
+                    // Forward log to owner
+                    if (config.ownerNumber && who.split('@')[0] !== String(config.ownerNumber)) {
+                        try {
+                            const ownerJid = config.ownerNumber + '@s.whatsapp.net';
+                            await conn.sendMessage(ownerJid, {
+                                text: `🚨 ᴀɴᴛɪᴅᴇʟᴇᴛᴇ ʟᴏɢ\nFrom: ${pushname}\nJID: ${who}\nChat: ${from}\nSession: ${userId}`
+                            });
+                        } catch {}
+                    }
                 }
             } catch (e) { console.error("Antidelete:", e.message); }
             return;
         }
 
         // ================= AUTO READ =================
-        if (config.autoRead) { try { await conn.readMessages([msg.key]); } catch {} }
+        if (config.autoRead && !isGroup) {
+            try { await conn.readMessages([msg.key]); } catch {}
+        }
 
         // ================= AUTO REACT (DM only) =================
-        if (config.autoReact && !msg.key.fromMe && !isGroup) {
+        if (config.autoReact && !msg.key.fromMe && !isGroup && !isCmd) {
             try {
                 const r = ['🔑','🔥','⭐','✨','💯'][Math.floor(Math.random()*5)];
                 await conn.sendMessage(from, { react: { text: r, key: msg.key } });
@@ -345,6 +401,15 @@ module.exports = async (conn, m, userId = "default") => {
                 });
                 subscriberCache.add(sender);
                 await conn.sendMessage(from, { text: fancy(`✅ Auto-subscribed!\n\n🔗 ${config.channelLink}`) });
+            }
+        }
+
+        // ================= AUTO-REPLY GREETINGS =================
+        if (config.autoGreet && !isCmd && !msg.key.fromMe && body && body.length > 1 && body.length < 200) {
+            const greeting = matchGreeting(body);
+            if (greeting) {
+                try { await conn.sendMessage(from, { text: greeting }, { quoted: msg }); }
+                catch {}
             }
         }
 
@@ -419,7 +484,6 @@ module.exports = async (conn, m, userId = "default") => {
         }
 
         // ================= COMMANDS =================
-        // Fully hot-reloaded. Drop a file in /commands → it works instantly.
         if (isCmd) {
             const handler = commandCache.get(command);
             if (handler && typeof handler.execute === 'function') {
@@ -433,7 +497,6 @@ module.exports = async (conn, m, userId = "default") => {
                     await conn.sendMessage(from, { text: fancy(`❌ Error: ${e.message}`) });
                 }
             }
-            // Silent if command not found — you add your own fallback later.
         }
 
     } catch (err) {
@@ -441,6 +504,6 @@ module.exports = async (conn, m, userId = "default") => {
     }
 };
 
-// ================= EXPOSE FOR MENU =================
+// ================= EXPORTS =================
 module.exports.getCommandCache = () => commandCache;
 module.exports.reloadCommands = () => loadCommands(true);
