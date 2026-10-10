@@ -20,6 +20,11 @@ const { ChannelPost, Account, SessionSettings, MessageLog, LiveEvent, AutoReply,
 const auth = require("./lib/auth");
 const adminAuth = require("./lib/adminAuth");
 const apiKeys = require("./lib/apiKeys");
+const auditLog = require("./lib/auditLog");
+const analytics = require("./lib/analytics");
+const backupLib = require("./lib/backup");
+const aiChat = require("./lib/aiChat");
+const payments = require("./lib/payments");
 
 const app = express();
 const PORT = process.env.PORT || config.port || 3000;
@@ -102,6 +107,11 @@ app.get("/live",            (req, res) => servePage(res, "live.html"));
 app.get("/web",             (req, res) => servePage(res, "web.html"));
 app.get("/channel",         (req, res) => servePage(res, "channel.html"));
 app.get("/admin",           (req, res) => servePage(res, "admin.html"));
+app.get("/admin-audit",     (req, res) => servePage(res, "admin-audit.html"));
+app.get("/admin-analytics", (req, res) => servePage(res, "admin-analytics.html"));
+app.get("/admin-backup",    (req, res) => servePage(res, "admin-backup.html"));
+app.get("/admin-payments",  (req, res) => servePage(res, "admin-payments.html"));
+app.get("/admin-ai",        (req, res) => servePage(res, "admin-ai.html"));
 app.get("/api-docs",        (req, res) => servePage(res, "api-docs.html"));
 app.get("/api-docs.html",   (req, res) => servePage(res, "api-docs.html"));
 app.get("/pair",            (req, res) => servePage(res, "pair.html"));
@@ -593,6 +603,16 @@ app.post("/api/admin/accounts/:id", adminAuth.requireAdmin, async (req, res) => 
         if (typeof isAdmin === "boolean") update.isAdmin = isAdmin;
         const account = await Account.findByIdAndUpdate(req.params.id, update, { new: true }).select("-password");
         if (!account) return res.status(404).json({ error: "Not found" });
+
+        // Audit
+        try {
+            await auditLog.log(req, isBanned ? "ban_account" : "update_account", {
+                target: account.email,
+                targetType: "account",
+                details: update
+            });
+        } catch {}
+
         res.json({ success: true, account });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -601,6 +621,14 @@ app.delete("/api/admin/accounts/:id", adminAuth.requireAdmin, async (req, res) =
     try {
         const account = await Account.findByIdAndDelete(req.params.id);
         if (!account) return res.status(404).json({ error: "Not found" });
+
+        try {
+            await auditLog.log(req, "delete_account", {
+                target: account.email,
+                targetType: "account"
+            });
+        } catch {}
+
         res.json({ success: true, deleted: account.email });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -626,6 +654,14 @@ app.get("/api/admin/sessions", adminAuth.requireAdmin, async (req, res) => {
 app.delete("/api/admin/sessions/:sessionId", adminAuth.requireAdmin, async (req, res) => {
     try {
         await logoutSession(req.params.sessionId);
+
+        try {
+            await auditLog.log(req, "kill_session", {
+                target: req.params.sessionId,
+                targetType: "session"
+            });
+        } catch {}
+
         res.json({ success: true, message: `Session ${req.params.sessionId} killed.` });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -643,8 +679,143 @@ app.post("/api/admin/broadcast", adminAuth.requireAdmin, async (req, res) => {
                 await new Promise(r => setTimeout(r, 800));
             } catch { failed++; }
         }
+
+        try {
+            await auditLog.log(req, "broadcast", {
+                targetType: "system",
+                details: { sent, failed, preview: text.slice(0, 100) }
+            });
+        } catch {}
+
         res.json({ success: true, sent, failed });
     } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============================================
+//   ADMIN — AUDIT LOG
+// ============================================
+app.get("/api/admin/audit", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        const limit = Math.min(parseInt(req.query.limit) || 200, 500);
+        const rows = await auditLog.list(limit, {
+            adminEmail: req.query.adminEmail,
+            action: req.query.action
+        });
+        res.json({ success: true, logs: rows });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============================================
+//   ADMIN — ANALYTICS
+// ============================================
+app.get("/api/admin/analytics/top-commands", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        const days = parseInt(req.query.days) || 7;
+        const rows = await analytics.topCommands(days, 25);
+        res.json({ success: true, commands: rows });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/api/admin/analytics/hourly", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        const hours = parseInt(req.query.hours) || 24;
+        const rows = await analytics.hourlyVolume(hours);
+        res.json({ success: true, hours: rows });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/api/admin/analytics/errors", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        const rows = await analytics.errorsRecent(50);
+        res.json({ success: true, errors: rows });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============================================
+//   ADMIN — BACKUP
+// ============================================
+app.get("/api/admin/backup/create", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        await auditLog.log(req, "backup_create");
+        const { file, size } = await backupLib.saveBackupToFile();
+        res.json({ success: true, file, sizeMB: (size / 1024 / 1024).toFixed(2) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/api/admin/backup/download", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        await auditLog.log(req, "backup_download");
+        const backup = await backupLib.createBackup();
+        res.setHeader("Content-Disposition", `attachment; filename="xmd_backup_${Date.now()}.json"`);
+        res.setHeader("Content-Type", "application/json");
+        res.send(JSON.stringify(backup, null, 2));
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/api/admin/backup/list", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        const rows = await backupLib.listBackups();
+        res.json({ success: true, backups: rows });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============================================
+//   PAYMENTS
+// ============================================
+app.get("/api/admin/payments/packages", adminAuth.requireAdmin, (req, res) => {
+    res.json({ success: true, packages: payments.PACKAGES });
+});
+
+app.post("/api/payments/checkout", auth.requireAuth, async (req, res) => {
+    try {
+        const { provider, packageKey } = req.body || {};
+        if (!provider || !packageKey) return res.status(400).json({ error: "provider and packageKey required" });
+
+        const acc = await Account.findById(req.account.id).lean();
+        if (!acc) return res.status(404).json({ error: "Account not found" });
+
+        let result;
+        if (provider === "paystack") {
+            result = await payments.paystackCheckout(req.account.id, packageKey, acc.email);
+        } else if (provider === "stripe") {
+            result = await payments.stripeCheckout(req.account.id, packageKey, acc.email);
+        } else {
+            return res.status(400).json({ error: "Unknown provider" });
+        }
+        res.json({ success: true, ...result });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/payments/webhook/paystack", express.json(), async (req, res) => {
+    try {
+        if (!payments.verifyPaystackSignature(req)) return res.status(401).json({ error: "Bad signature" });
+        const ok = await payments.handlePaystackWebhook(req.body);
+        res.json({ received: true, processed: ok });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/payments/webhook/stripe", express.json({ type: "application/json" }), async (req, res) => {
+    try {
+        const ok = await payments.handleStripeWebhook(req.body);
+        res.json({ received: true, processed: ok });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============================================
+//   ADMIN — AI CONTROL
+// ============================================
+app.post("/api/admin/ai/chat", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        const { sessionId, message } = req.body || {};
+        if (!message) return res.status(400).json({ error: "message required" });
+        const reply = await aiChat.askAI(message, sessionId || "admin", null);
+        res.json({ success: true, reply });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/admin/ai/clear/:sessionId", adminAuth.requireAdmin, async (req, res) => {
+    aiChat.clearHistory(req.params.sessionId);
+    res.json({ success: true });
 });
 
 // ============================================
@@ -1398,7 +1569,7 @@ async function requestPairingCodeForSession(sessionId, phoneNumber) {
 
 // ---------------- SOCKET BOOT ----------------
 async function bootSocket(sessionId, session) {
-    session.id = sessionId;   // ← ADDED for live feed
+    session.id = sessionId;
 
     await initMongo();
 
