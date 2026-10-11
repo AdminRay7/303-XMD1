@@ -144,7 +144,7 @@ body.theme-ai{
 // ============================================================
 //   DIRECT GROQ CALL — no server, no .env
 // ============================================================
-const GROQ_API_KEY = "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";
+const GROQ_API_KEY = "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";
 const GROQ_MODEL   = "llama-3.3-70b-versatile";
 const GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions";
 
@@ -167,8 +167,7 @@ const sendBtn = document.getElementById('sendBtn');
 const clearBtn = document.getElementById('clearBtn');
 const toastEl = document.getElementById('toast');
 
-// Browser-side conversation memory
-const history = [];   // [{role, content}, ...]
+const history = [];
 
 function toast(msg, err = false) {
     toastEl.textContent = msg;
