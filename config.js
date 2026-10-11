@@ -29,7 +29,7 @@ module.exports = {
     adminEmails: list(process.env.ADMIN_EMAIL, ["ryanobanga243@gmail.com"])
                     .map(e => e.toLowerCase()),
 
-    // ---- AI chat (NEW) ----
+    // ---- AI chat ----
     aiChatEnabled:  bool(process.env.AI_CHAT_ENABLED, false),
     aiSystemPrompt: str(process.env.AI_SYSTEM_PROMPT,
         "You are 303-XMD, a friendly WhatsApp assistant. Keep replies under 300 chars unless asked for detail."),
