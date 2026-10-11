@@ -127,7 +127,7 @@ body.theme-ai{
 
     <div class="chat-box">
         <div class="messages" id="messages">
-            <div class="msg meta">AI provider: <span id="providerLabel">Groq · llama-3.3-70b</span></div>
+            <div class="msg meta">AI provider: <span id="providerLabel">Groq · openai/gpt-oss-20b</span></div>
             <div class="msg ai">Hi admin! Ask me anything to test the AI chatbot.</div>
         </div>
         <div class="chat-input">
@@ -145,7 +145,7 @@ body.theme-ai{
 //   DIRECT GROQ CALL — no server, no .env
 // ============================================================
 const GROQ_API_KEY = "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";
-const GROQ_MODEL   = "llama-3.3-70b-versatile";
+const GROQ_MODEL   = "openai/gpt-oss-20b";
 const GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions";
 
 const SYSTEM_PROMPT = "You are 303-XMD, a friendly WhatsApp assistant. Keep replies under 300 chars unless asked for detail.";
@@ -194,7 +194,7 @@ async function askGroq(userMessage) {
             { role: "user", content: userMessage }
         ],
         temperature: 0.7,
-        max_tokens: 400
+        max_tokens: 1024
     };
 
     const r = await fetch(GROQ_URL, {
@@ -213,7 +213,9 @@ async function askGroq(userMessage) {
         throw new Error(errMsg);
     }
 
-    const reply = data?.choices?.[0]?.message?.content?.trim();
+    const choice = data?.choices?.[0]?.message;
+    let reply = (choice?.content || "").trim();
+    if (!reply && choice?.reasoning) reply = choice.reasoning.trim();
     if (!reply) throw new Error("Empty reply from Groq");
 
     history.push({ role: "user", content: userMessage });
