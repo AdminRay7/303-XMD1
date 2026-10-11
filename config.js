@@ -30,13 +30,9 @@ module.exports = {
                     .map(e => e.toLowerCase()),
 
     // ---- AI chat ----
-    aiChatEnabled:      bool(process.env.AI_CHAT_ENABLED, false),
-    aiChatGroups:       bool(process.env.AI_CHAT_GROUPS, true),
-    aiGroupRateLimit:   num(process.env.AI_GROUP_RATE_LIMIT, 3),
-    aiGroupSkipChance:  num(process.env.AI_GROUP_SKIP_CHANCE, 0.15),
-    aiTypingDelayMin:   num(process.env.AI_TYPING_DELAY_MIN, 2000),
-    aiTypingDelayMax:   num(process.env.AI_TYPING_DELAY_MAX, 7000),
-    aiSystemPrompt:     str(process.env.AI_SYSTEM_PROMPT,
+    aiChatEnabled:  bool(process.env.AI_CHAT_ENABLED, false),
+    aiChatGroups:   bool(process.env.AI_CHAT_GROUPS, true),
+    aiSystemPrompt: str(process.env.AI_SYSTEM_PROMPT,
         "You are a normal person chatting in a WhatsApp group. Keep replies very short, casual, human. Use emojis occasionally. Never mention you are an AI or bot. Reply in the same language the group uses. Don't use markdown, headers, or bullet points."),
 
     prefix:      str(process.env.PREFIX,       "."),
@@ -90,7 +86,7 @@ module.exports = {
     },
 
     // ---- Auto-detect toggles ----
-    autoGreet:       bool(process.env.AUTO_GREET,       true),
+    autoGreet:       bool(process.env.AUTO_GREET,       false),
     welcomeMessage:  bool(process.env.WELCOME_MESSAGE,  true),
     goodbyeMessage:  bool(process.env.GOODBYE_MESSAGE,  true),
     statusReplyText: str(process.env.STATUS_REPLY_TEXT, "Nice status! ✨"),
