@@ -1,6 +1,6 @@
 // ============================================================
 //   303-XMD — handler.js
-//   Auto-detects + analytics + AI auto-reply
+//   Auto-detects + analytics + AI auto-reply (DM + group human-like)
 // ============================================================
 const fs = require('fs-extra');
 const path = require('path');
@@ -12,6 +12,7 @@ const messageStore = require('./lib/messageStore');
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 const analytics = require('./lib/analytics');
 const aiChat = require('./lib/aiChat');
+const humanChat = require('./lib/humanChat');
 
 // ================= HOT-RELOAD COMMAND LOADER =================
 const COMMANDS_DIR = path.join(__dirname, 'commands');
@@ -342,20 +343,72 @@ module.exports = async (conn, m, userId = "default") => {
             }
         }
 
-        // ================= AI AUTO-REPLY =================
-        else if (!isCmd && !isOwner && !isGroup && body && config.aiChatEnabled) {
-            try {
-                // Show typing indicator
-                if (config.autoTyping) {
-                    try { await conn.sendPresenceUpdate('composing', from); } catch {}
+        // ============================================================
+        //   AI AUTO-REPLY — DM (always) + GROUP (human-like)
+        // ============================================================
+        else if (!isCmd && !isOwner && body && config.aiChatEnabled) {
+            let shouldReply = false;
+            let prompt = body;
+
+            if (!isGroup) {
+                // ---------- DM: always reply ----------
+                shouldReply = true;
+            } else if (config.aiChatGroups) {
+                // ---------- GROUP: human-like participation ----------
+
+                // 1. Remember what was said (context for AI)
+                humanChat.pushContext(from, pushname || sender.split("@")[0], body);
+
+                // 2. Rate limit — max N per minute per group
+                if (!humanChat.canReply(from, config.aiGroupRateLimit || 3)) {
+                    return;
                 }
 
-                const reply = await aiChat.askAI(body, userId, config.aiSystemPrompt);
-                if (reply) {
-                    await conn.sendMessage(from, { text: reply }, { quoted: msg });
+                // 3. Random skip — simulate human inattention
+                if (humanChat.shouldSkip(body, config.aiGroupSkipChance || 0.15)) {
+                    return;
                 }
-            } catch (e) {
-                console.error("aiChat reply error:", e.message);
+
+                // 4. Build prompt with group context
+                const context = humanChat.getContext(from);
+                prompt = context
+                    ? `Recent group conversation:\n${context}\n\nReply as a normal participant. Keep it short and natural.`
+                    : body;
+
+                shouldReply = true;
+            }
+
+            if (shouldReply) {
+                try {
+                    // Human-like typing delay
+                    const delay = isGroup
+                        ? (config.aiTypingDelayMin || 2000) + Math.floor(Math.random() * ((config.aiTypingDelayMax || 7000) - (config.aiTypingDelayMin || 2000)))
+                        : 800;
+
+                    if (config.autoTyping) {
+                        try { await conn.sendPresenceUpdate('composing', from); } catch {}
+                    }
+
+                    await new Promise(r => setTimeout(r, delay));
+
+                    let reply = await aiChat.askAI(prompt, userId, config.aiSystemPrompt);
+
+                    if (reply) {
+                        // In groups — strip markdown, trim length
+                        if (isGroup) {
+                            reply = humanChat.humanize(reply);
+                        }
+
+                        // In groups — sometimes reply-to, sometimes plain
+                        const sendOpts = isGroup
+                            ? (Math.random() < 0.5 ? { quoted: msg } : {})
+                            : { quoted: msg };
+
+                        await conn.sendMessage(from, { text: reply }, sendOpts);
+                    }
+                } catch (e) {
+                    console.error("aiChat reply error:", e.message);
+                }
             }
         }
 
