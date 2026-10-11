@@ -74,6 +74,12 @@ body.theme-ai{
     color:var(--g1);
     font-style:italic;
 }
+.msg.error{
+    align-self:flex-start;
+    background:rgba(255,82,82,.1);
+    border:1px solid rgba(255,82,82,.4);
+    color:#ff9999;
+}
 .chat-input{
     display:flex;
     gap:8px;
@@ -121,8 +127,8 @@ body.theme-ai{
 
     <div class="chat-box">
         <div class="messages" id="messages">
-            <div class="msg meta">AI provider: <span id="providerLabel">loading…</span></div>
-            <div class="msg ai">Hi admin! Ask me anything to test the AI chatbot configured on your bot.</div>
+            <div class="msg meta">AI provider: <span id="providerLabel">Groq · llama-3.3-70b</span></div>
+            <div class="msg ai">Hi admin! Ask me anything to test the AI chatbot.</div>
         </div>
         <div class="chat-input">
             <textarea id="input" placeholder="Type a message…"></textarea>
@@ -135,6 +141,15 @@ body.theme-ai{
 
 <script src="/sidebar.js"></script>
 <script>
+// ============================================================
+//   DIRECT GROQ CALL — no server, no .env
+// ============================================================
+const GROQ_API_KEY = "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";
+const GROQ_MODEL   = "llama-3.3-70b-versatile";
+const GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions";
+
+const SYSTEM_PROMPT = "You are 303-XMD, a friendly WhatsApp assistant. Keep replies under 300 chars unless asked for detail.";
+
 const ADMIN_EMAIL = 'ryanobanga243@gmail.com';
 const token = localStorage.getItem('token');
 const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -142,7 +157,7 @@ if (!token) location.href = '/login';
 
 const email = (user.email || '').trim().toLowerCase();
 if (email !== ADMIN_EMAIL.toLowerCase()) {
-    document.body.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#fff;font-family:sans-serif"><h2>ACCESS DENIED</h2></div>`;
+    document.body.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;text-align:center"><div><h2>ACCESS DENIED</h2><p style="color:#888">Admin only</p></div></div>`;
     throw new Error('Not admin');
 }
 
@@ -150,10 +165,10 @@ const messagesBox = document.getElementById('messages');
 const input = document.getElementById('input');
 const sendBtn = document.getElementById('sendBtn');
 const clearBtn = document.getElementById('clearBtn');
-const providerLabel = document.getElementById('providerLabel');
 const toastEl = document.getElementById('toast');
 
-const SESSION = 'admin_' + Date.now();
+// Browser-side conversation memory
+const history = [];   // [{role, content}, ...]
 
 function toast(msg, err = false) {
     toastEl.textContent = msg;
@@ -171,6 +186,44 @@ function addMsg(text, cls = 'ai') {
     return div;
 }
 
+async function askGroq(userMessage) {
+    const payload = {
+        model: GROQ_MODEL,
+        messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            ...history,
+            { role: "user", content: userMessage }
+        ],
+        temperature: 0.7,
+        max_tokens: 400
+    };
+
+    const r = await fetch(GROQ_URL, {
+        method: "POST",
+        headers: {
+            "Authorization": "Bearer " + GROQ_API_KEY,
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+    });
+
+    const data = await r.json();
+
+    if (!r.ok) {
+        const errMsg = data?.error?.message || `HTTP ${r.status}`;
+        throw new Error(errMsg);
+    }
+
+    const reply = data?.choices?.[0]?.message?.content?.trim();
+    if (!reply) throw new Error("Empty reply from Groq");
+
+    history.push({ role: "user", content: userMessage });
+    history.push({ role: "assistant", content: reply });
+    if (history.length > 20) history.splice(0, history.length - 20);
+
+    return reply;
+}
+
 async function send() {
     const text = input.value.trim();
     if (!text) return;
@@ -181,23 +234,12 @@ async function send() {
     const thinking = addMsg('Thinking…', 'thinking');
 
     try {
-        const r = await fetch('/api/admin/ai/chat', {
-            method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: SESSION, message: text })
-        });
-        const d = await r.json();
+        const reply = await askGroq(text);
         thinking.remove();
-
-        if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
-        if (!d.reply) {
-            addMsg('⚠️ AI returned no response — check AI_API_KEY in .env', 'ai');
-        } else {
-            addMsg(d.reply, 'ai');
-        }
+        addMsg(reply, 'ai');
     } catch (e) {
         thinking.remove();
-        addMsg('❌ ' + e.message, 'ai');
+        addMsg('❌ ' + e.message, 'error');
     }
 
     sendBtn.disabled = false;
@@ -212,27 +254,12 @@ input.addEventListener('keydown', e => {
     }
 });
 
-clearBtn.onclick = async () => {
-    try {
-        const r = await fetch('/api/admin/ai/clear/' + encodeURIComponent(SESSION), {
-            method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-        const d = await r.json();
-        if (!r.ok) throw new Error(d.error);
-        messagesBox.innerHTML = `<div class="msg meta">Memory cleared</div>`;
-        addMsg('Memory cleared. Fresh conversation started.', 'ai');
-        toast('Memory cleared');
-    } catch (e) { toast(e.message, true); }
+clearBtn.onclick = () => {
+    history.length = 0;
+    messagesBox.innerHTML = `<div class="msg meta">Memory cleared</div>`;
+    addMsg('Memory cleared. Fresh conversation started.', 'ai');
+    toast('Memory cleared');
 };
-
-// Load provider label
-(async () => {
-    try {
-        // No dedicated endpoint, so just fetch config endpoint if available
-        providerLabel.textContent = 'see .env';
-    } catch {}
-})();
 
 input.focus();
 </script>
