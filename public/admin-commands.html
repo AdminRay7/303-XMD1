@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Commands Playground | 303-XMD</title>
+<meta name="theme-color" content="#00d4ff">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/theme.css">
+<style>
+body.theme-commands{
+    --g1:#00d4ff;
+    --g2:#7b2ff7;
+    --glow:rgba(0,212,255,.4);
+    --bg:#000814;
+    --bg2:#001a2e;
+}
+
+.top-bar{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:center;
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:12px 14px;
+    margin-bottom:16px;
+}
+.top-bar input{
+    flex:1;
+    min-width:200px;
+    padding:10px 14px;
+    background:rgba(0,0,0,.4);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-radius:10px;
+    font-size:13px;
+    outline:none;
+}
+.top-bar input:focus{ border-color:var(--g1); box-shadow:0 0 15px var(--glow); }
+.top-bar select{
+    padding:10px 12px;
+    background:rgba(0,0,0,.4);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-radius:10px;
+    font-size:12px;
+    outline:none;
+}
+.counter{
+    font-size:11px;
+    color:var(--muted);
+    letter-spacing:1px;
+    margin-left:auto;
+}
+
+.cat-group{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:18px;
+    margin-bottom:16px;
+    position:relative;
+    overflow:hidden;
+}
+.cat-group::before{
+    content:'';
+    position:absolute;
+    top:0; left:0;
+    width:80px; height:3px;
+    background:linear-gradient(90deg,var(--g1),var(--g2));
+    box-shadow:0 0 15px var(--glow);
+}
+.cat-title{
+    font-size:12px;
+    letter-spacing:3px;
+    text-transform:uppercase;
+    color:var(--g1);
+    margin-bottom:14px;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-weight:800;
+}
+.cat-title i{ font-size:14px; }
+
+.cmd-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
+    gap:8px;
+}
+
+.cmd-btn{
+    background:rgba(255,255,255,.03);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:10px 12px;
+    cursor:pointer;
+    transition:.2s;
+    text-align:left;
+    font-family:inherit;
+    color:var(--text);
+    width:100%;
+    display:flex;
+    align-items:center;
+    gap:8px;
+}
+.cmd-btn:hover{
+    background:linear-gradient(135deg,rgba(0,212,255,.08),rgba(123,47,247,.06));
+    border-color:var(--g1);
+    transform:translateY(-1px);
+    box-shadow:0 4px 15px rgba(0,212,255,.15);
+}
+.cmd-btn:active{ transform:scale(.98); }
+.cmd-btn.running{
+    background:linear-gradient(135deg,var(--g1),var(--g2));
+    color:#000;
+    border-color:transparent;
+}
+.cmd-btn .cmd-name{
+    font-family:'Courier New',monospace;
+    font-size:12px;
+    font-weight:700;
+    flex:1;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+}
+.cmd-btn .cmd-icon{
+    font-size:11px;
+    opacity:.7;
+    flex-shrink:0;
+}
+
+.response{
+    margin-top:10px;
+    padding:12px 14px;
+    background:rgba(0,0,0,.35);
+    border-left:3px solid var(--g1);
+    border-radius:10px;
+    font-size:12.5px;
+    line-height:1.6;
+    color:var(--text);
+    white-space:pre-wrap;
+    word-break:break-word;
+    animation:fadeIn .2s;
+}
+.response.error{
+    border-left-color:#ff5252;
+    color:#ff9999;
+    background:rgba(255,82,82,.08);
+}
+.response .label{
+    font-size:10px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:var(--muted);
+    display:block;
+    margin-bottom:6px;
+}
+@keyframes fadeIn{ from{opacity:0; transform:translateY(-4px);} to{opacity:1; transform:none;} }
+
+.modal-backdrop{
+    display:none;
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,.75);
+    z-index:400;
+    backdrop-filter:blur(4px);
+}
+.modal-backdrop.show{ display:flex; align-items:center; justify-content:center; padding:20px; }
+.modal{
+    background:var(--panel);
+    border:1px solid var(--g1);
+    border-radius:16px;
+    padding:24px;
+    max-width:420px;
+    width:100%;
+    box-shadow:0 20px 60px rgba(0,0,0,.5);
+}
+.modal h3{
+    font-size:14px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    margin-bottom:8px;
+    color:var(--g1);
+}
+.modal p{ font-size:12px; color:var(--muted); margin-bottom:14px; }
+.modal input{
+    width:100%;
+    padding:12px 14px;
+    background:rgba(0,0,0,.5);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-radius:10px;
+    font-size:14px;
+    outline:none;
+    font-family:'Courier New',monospace;
+    margin-bottom:14px;
+}
+.modal input:focus{ border-color:var(--g1); box-shadow:0 0 15px var(--glow); }
+.modal-btns{ display:flex; gap:8px; }
+.modal-btns button{ flex:1; }
+</style>
+</head>
+<body class="theme-commands">
+
+<div id="appSidebarMount"></div>
+
+<main class="app-content">
+    <div class="page-head">
+        <div>
+            <h2>Commands Playground</h2>
+            <div class="sub">Tap any command to test it live</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="refreshBtn"><i class="fas fa-rotate"></i> Refresh</button>
+    </div>
+
+    <div class="top-bar">
+        <input type="text" id="searchInput" placeholder="🔍 Search commands…">
+        <select id="categoryFilter">
+            <option value="">All categories</option>
+        </select>
+        <span class="counter" id="counter">0 commands</span>
+    </div>
+
+    <div id="commandsRoot">
+        <div class="empty"><i class="fas fa-spinner fa-spin"></i>Loading commands…</div>
+    </div>
+</main>
+
+<div class="modal-backdrop" id="modal">
+    <div class="modal">
+        <h3 id="modalTitle">Run command</h3>
+        <p id="modalDesc">Enter arguments (optional)</p>
+        <input type="text" id="modalInput" placeholder="arguments…">
+        <div class="modal-btns">
+            <button class="btn btn-primary" id="modalRun"><i class="fas fa-bolt"></i> Run</button>
+            <button class="btn btn-ghost" id="modalCancel">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/sidebar.js"></script>
+<script>
+const ADMIN_EMAIL = 'ryanobanga243@gmail.com';
+const token = localStorage.getItem('token');
+const user = JSON.parse(localStorage.getItem('user') || '{}');
+if (!token) location.href = '/login';
+
+const email = (user.email || '').trim().toLowerCase();
+if (email !== ADMIN_EMAIL.toLowerCase()) {
+    document.body.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;text-align:center"><div><h2>ACCESS DENIED</h2><p style="color:#888">Admin only</p></div></div>`;
+    throw new Error('Not admin');
+}
+
+const commandsRoot = document.getElementById('commandsRoot');
+const searchInput = document.getElementById('searchInput');
+const categoryFilter = document.getElementById('categoryFilter');
+const counter = document.getElementById('counter');
+const modal = document.getElementById('modal');
+const modalTitle = document.getElementById('modalTitle');
+const modalDesc = document.getElementById('modalDesc');
+const modalInput = document.getElementById('modalInput');
+const modalRun = document.getElementById('modalRun');
+const modalCancel = document.getElementById('modalCancel');
+const toastEl = document.getElementById('toast');
+
+let allCommands = [];
+let activeCommand = null;
+
+const CATEGORY_ICONS = {
+    admin: 'fa-shield-halved',
+    group: 'fa-users',
+    fun: 'fa-face-smile',
+    tools: 'fa-tools',
+    text: 'fa-font',
+    misc: 'fa-star',
+    info: 'fa-circle-info',
+    general: 'fa-cog',
+    download: 'fa-download',
+    auto: 'fa-robot',
+    media: 'fa-photo-film',
+    game: 'fa-gamepad',
+    ai: 'fa-brain',
+    owner: 'fa-crown'
+};
+
+function toast(msg, err = false) {
+    toastEl.textContent = msg;
+    toastEl.classList.toggle('err', err);
+    toastEl.classList.add('show');
+    setTimeout(() => toastEl.classList.remove('show'), 2200);
+}
+
+function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+}
+
+async function loadCommands() {
+    try {
+        const r = await fetch('/api/admin/commands/list', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed');
+
+        allCommands = d.commands || [];
+
+        const cats = [...new Set(allCommands.map(c => c.category))].sort();
+        categoryFilter.innerHTML = '<option value="">All categories</option>' +
+            cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+
+        render();
+    } catch (e) {
+        commandsRoot.innerHTML = `<div class="empty">❌ ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function render() {
+    const q = searchInput.value.toLowerCase().trim();
+    const cat = categoryFilter.value;
+
+    let list = allCommands.slice();
+    if (cat) list = list.filter(c => c.category === cat);
+    if (q) list = list.filter(c =>
+        c.name.toLowerCase().includes(q) ||
+        (c.description || '').toLowerCase().includes(q) ||
+        (c.aliases || []).some(a => a.toLowerCase().includes(q))
+    );
+
+    counter.textContent = `${list.length} command${list.length === 1 ? '' : 's'}`;
+
+    if (!list.length) {
+        commandsRoot.innerHTML = `<div class="empty"><i class="fas fa-search"></i>No commands match</div>`;
+        return;
+    }
+
+    const grouped = {};
+    for (const c of list) {
+        if (!grouped[c.category]) grouped[c.category] = [];
+        grouped[c.category].push(c);
+    }
+
+    const cats = Object.keys(grouped).sort((a, b) => {
+        if (a === 'general') return -1;
+        if (b === 'general') return 1;
+        return a.localeCompare(b);
+    });
+
+    commandsRoot.innerHTML = cats.map(catName => {
+        const icon = CATEGORY_ICONS[catName] || 'fa-circle-dot';
+        const items = grouped[catName].sort((a, b) => a.name.localeCompare(b.name));
+
+        return `
+            <div class="cat-group">
+                <div class="cat-title"><i class="fas ${icon}"></i> ${escapeHtml(catName)} · ${items.length}</div>
+                <div class="cmd-grid">
+                    ${items.map(c => `
+                        <button class="cmd-btn" data-name="${escapeHtml(c.name)}" title="${escapeHtml(c.description || '')}">
+                            <span class="cmd-name">.${escapeHtml(c.name)}</span>
+                            <i class="fas fa-play cmd-icon"></i>
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // Attach click handlers
+    commandsRoot.querySelectorAll('.cmd-btn').forEach(btn => {
+        btn.addEventListener('click', () => onCommandClick(btn));
+    });
+}
+
+function onCommandClick(btn) {
+    const name = btn.dataset.name;
+    const cmd = allCommands.find(c => c.name === name);
+    if (!cmd) return;
+
+    // If command takes args, show modal. Otherwise run directly.
+    const needsArgs = ['post','kick','promote','demote','setname','translate','json','jwt','calc','hash','binary','hex','base64','weather','define','country','ip','random','ship','rate','8ball','qr','shorten','urlencode','urldecode','epoch','password','palindrome','vowel','wordcount','charcount','quoteimg','rate','roll','wide','clap','zalgo','strike','bold','italic','mono','sticker','vv','toimg','toaudio','tovid'].includes(name);
+
+    activeCommand = cmd;
+
+    if (needsArgs) {
+        modalTitle.textContent = `.${name}`;
+        modalDesc.textContent = cmd.description || 'Enter arguments (optional)';
+        modalInput.value = '';
+        modalInput.placeholder = getExampleFor(name);
+        modal.classList.add('show');
+        setTimeout(() => modalInput.focus(), 100);
+    } else {
+        runCommand(name, '');
+    }
+}
+
+function getExampleFor(name) {
+    const examples = {
+        'calc': '2 + 2 * 3',
+        'translate': 'es Hello world',
+        '8ball': 'Will I win today?',
+        'ship': 'Alice Bob',
+        'rate': 'pizza',
+        'kick': '254712345678',
+        'promote': '254712345678',
+        'setname': 'New Group Name',
+        'json': '{"a":1,"b":2}',
+        'hash': 'mysecrettext',
+        'base64': 'hello',
+        'hex': 'hello',
+        'binary': 'hi',
+        'weather': 'Nairobi',
+        'define': 'hello',
+        'country': 'Kenya',
+        'ip': '8.8.8.8',
+        'random': '1 100',
+        'qr': 'https://example.com',
+        'shorten': 'https://example.com/long-url',
+        'password': '20',
+        'urlencode': 'hello world',
+        'urldecode': 'hello%20world',
+        'epoch': '1700000000',
+        'palindrome': 'racecar',
+        'vowel': 'hello',
+        'wordcount': 'hello world',
+        'charcount': 'hello',
+        'post': 'Hello channel!',
+        'roll': '20',
+        'wide': 'hello',
+        'clap': 'hello world',
+        'zalgo': 'hello',
+        'strike': 'hello',
+        'bold': 'hello',
+        'italic': 'hello',
+        'mono': 'hello',
+        'quoteimg': 'Stay positive'
+    };
+    return examples[name] || 'arguments…';
+}
+
+async function runCommand(name, args) {
+    // Find button and mark running
+    const btn = commandsRoot.querySelector(`.cmd-btn[data-name="${CSS.escape(name)}"]`);
+    if (btn) {
+        btn.classList.add('running');
+        btn.querySelector('.cmd-icon').className = 'fas fa-spinner fa-spin cmd-icon';
+    }
+
+    // Remove old response
+    const oldResp = btn?.parentElement?.querySelector('.response');
+    if (oldResp) oldResp.remove();
+
+    try {
+        const r = await fetch('/api/admin/commands/run', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ command: name, args: args || '' })
+        });
+
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed');
+
+        showResponse(btn, d.output, d.success === false);
+    } catch (e) {
+        showResponse(btn, e.message, true);
+    }
+
+    if (btn) {
+        btn.classList.remove('running');
+        btn.querySelector('.cmd-icon').className = 'fas fa-play cmd-icon';
+    }
+}
+
+function showResponse(btn, text, isError) {
+    if (!btn) return;
+    const wrap = btn.parentElement;
+
+    const div = document.createElement('div');
+    div.className = 'response' + (isError ? ' error' : '');
+    div.innerHTML = `<span class="label">${isError ? '❌ Error' : '✅ Response'}</span>${escapeHtml(text || '(no output)')}`;
+
+    // Insert after the button row
+    wrap.appendChild(div);
+
+    // Auto-scroll
+    div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// Modal handlers
+modalRun.addEventListener('click', () => {
+    if (!activeCommand) return;
+    const args = modalInput.value.trim();
+    modal.classList.remove('show');
+    runCommand(activeCommand.name, args);
+});
+
+modalCancel.addEventListener('click', () => {
+    modal.classList.remove('show');
+    activeCommand = null;
+});
+
+modalInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') modalRun.click();
+});
+
+modal.addEventListener('click', (e) => {
+    if (e.target === modal) modalCancel.click();
+});
+
+searchInput.addEventListener('input', render);
+categoryFilter.addEventListener('change', render);
+document.getElementById('refreshBtn').onclick = () => { loadCommands(); toast('Reloaded'); };
+
+loadCommands();
+</script>
+</body>
+</html>
