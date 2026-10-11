@@ -1,6 +1,6 @@
 // ============================================================
 //   303-XMD — handler.js
-//   Auto-detects + analytics + AI auto-reply (DM + group human-like)
+//   Auto-detects + analytics + AI auto-reply (DM + group, no limits)
 // ============================================================
 const fs = require('fs-extra');
 const path = require('path');
@@ -344,71 +344,54 @@ module.exports = async (conn, m, userId = "default") => {
         }
 
         // ============================================================
-        //   AI AUTO-REPLY — DM (always) + GROUP (human-like)
+        //   AI AUTO-REPLY — DM + GROUP (chat like a human, no limits)
         // ============================================================
         else if (!isCmd && !isOwner && body && config.aiChatEnabled) {
-            let shouldReply = false;
+            // Skip if message is empty or a command prefix
+            if (!body.trim()) return;
+
+            // Prevent double-processing
+            if (humanChat.hasReplied(msg.key.id)) return;
+
             let prompt = body;
+            let sendOpts = { quoted: msg };
 
-            if (!isGroup) {
-                // ---------- DM: always reply ----------
-                shouldReply = true;
-            } else if (config.aiChatGroups) {
-                // ---------- GROUP: human-like participation ----------
-
-                // 1. Remember what was said (context for AI)
+            if (isGroup) {
+                // Remember what was said
                 humanChat.pushContext(from, pushname || sender.split("@")[0], body);
 
-                // 2. Rate limit — max N per minute per group
-                if (!humanChat.canReply(from, config.aiGroupRateLimit || 3)) {
-                    return;
+                // Build prompt with full group context
+                const context = humanChat.getContext(from, 15);
+                if (context) {
+                    prompt =
+                        `You are chatting in a WhatsApp group. Here is the recent conversation:\n\n` +
+                        `${context}\n\n` +
+                        `Reply naturally to the latest message as a normal group participant. ` +
+                        `Match the language they're using. Keep it short and casual — like texting a friend. ` +
+                        `Don't repeat what others said, add to it or respond to it.`;
                 }
 
-                // 3. Random skip — simulate human inattention
-                if (humanChat.shouldSkip(body, config.aiGroupSkipChance || 0.15)) {
-                    return;
-                }
-
-                // 4. Build prompt with group context
-                const context = humanChat.getContext(from);
-                prompt = context
-                    ? `Recent group conversation:\n${context}\n\nReply as a normal participant. Keep it short and natural.`
-                    : body;
-
-                shouldReply = true;
+                // 50/50 reply-to vs plain
+                sendOpts = Math.random() < 0.4 ? { quoted: msg } : {};
             }
 
-            if (shouldReply) {
-                try {
-                    // Human-like typing delay
-                    const delay = isGroup
-                        ? (config.aiTypingDelayMin || 2000) + Math.floor(Math.random() * ((config.aiTypingDelayMax || 7000) - (config.aiTypingDelayMin || 2000)))
-                        : 800;
+            try {
+                // Tiny delay so it doesn't look instant-robotic
+                const delay = isGroup ? 800 + Math.floor(Math.random() * 700) : 300;
+                await new Promise(r => setTimeout(r, delay));
 
-                    if (config.autoTyping) {
-                        try { await conn.sendPresenceUpdate('composing', from); } catch {}
-                    }
-
-                    await new Promise(r => setTimeout(r, delay));
-
-                    let reply = await aiChat.askAI(prompt, userId, config.aiSystemPrompt);
-
-                    if (reply) {
-                        // In groups — strip markdown, trim length
-                        if (isGroup) {
-                            reply = humanChat.humanize(reply);
-                        }
-
-                        // In groups — sometimes reply-to, sometimes plain
-                        const sendOpts = isGroup
-                            ? (Math.random() < 0.5 ? { quoted: msg } : {})
-                            : { quoted: msg };
-
-                        await conn.sendMessage(from, { text: reply }, sendOpts);
-                    }
-                } catch (e) {
-                    console.error("aiChat reply error:", e.message);
+                if (config.autoTyping) {
+                    try { await conn.sendPresenceUpdate('composing', from); } catch {}
                 }
+
+                let reply = await aiChat.askAI(prompt, userId, config.aiSystemPrompt);
+
+                if (reply) {
+                    if (isGroup) reply = humanChat.humanize(reply);
+                    await conn.sendMessage(from, { text: reply }, sendOpts);
+                }
+            } catch (e) {
+                console.error("aiChat reply error:", e.message);
             }
         }
 
