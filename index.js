@@ -86,6 +86,27 @@ async function checkIsAdmin(accountId, email) {
         (Array.isArray(config.adminEmails) && config.adminEmails.includes((email || acc?.email || "").toLowerCase()));
 }
 
+function summarizeContent(content) {
+    if (!content) return "(empty)";
+    if (typeof content === "string") return content;
+
+    const parts = [];
+    if (content.text) parts.push(content.text);
+    if (content.caption) parts.push("[caption] " + content.caption);
+    if (content.image) parts.push("[image]");
+    if (content.video) parts.push("[video]");
+    if (content.audio) parts.push("[audio]");
+    if (content.sticker) parts.push("[sticker]");
+    if (content.document) parts.push("[document]");
+    if (content.react) parts.push("[reaction: " + (content.react.text || "?") + "]");
+    if (content.contacts) parts.push("[contact card]");
+    if (content.poll) parts.push("[poll: " + (content.poll.name || "?") + "]");
+    if (content.interactiveButtons) parts.push("[interactive button message]");
+    if (content.templateButtons) parts.push("[template button message]");
+
+    return parts.length ? parts.join(" ") : JSON.stringify(content).slice(0, 200);
+}
+
 // ---------------- API AUTH (legacy) ----------------
 const API_KEY = process.env.API_KEY || config.apiKey;
 function requireApiKey(req, res, next) {
@@ -107,6 +128,7 @@ app.get("/live",            (req, res) => servePage(res, "live.html"));
 app.get("/web",             (req, res) => servePage(res, "web.html"));
 app.get("/channel",         (req, res) => servePage(res, "channel.html"));
 app.get("/admin",           (req, res) => servePage(res, "admin.html"));
+app.get("/admin-commands",  (req, res) => servePage(res, "admin-commands.html"));
 app.get("/admin-audit",     (req, res) => servePage(res, "admin-audit.html"));
 app.get("/admin-analytics", (req, res) => servePage(res, "admin-analytics.html"));
 app.get("/admin-backup",    (req, res) => servePage(res, "admin-backup.html"));
@@ -604,7 +626,6 @@ app.post("/api/admin/accounts/:id", adminAuth.requireAdmin, async (req, res) => 
         const account = await Account.findByIdAndUpdate(req.params.id, update, { new: true }).select("-password");
         if (!account) return res.status(404).json({ error: "Not found" });
 
-        // Audit
         try {
             await auditLog.log(req, isBanned ? "ban_account" : "update_account", {
                 target: account.email,
@@ -689,6 +710,143 @@ app.post("/api/admin/broadcast", adminAuth.requireAdmin, async (req, res) => {
 
         res.json({ success: true, sent, failed });
     } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============================================
+//   ADMIN — COMMANDS PLAYGROUND
+// ============================================
+app.get("/api/admin/commands/list", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        const handler = require("./handler");
+        const cache = handler.getCommandCache ? handler.getCommandCache() : new Map();
+        const auto = handler.getAutoCache ? handler.getAutoCache() : new Map();
+
+        const seen = new Set();
+        const list = [];
+
+        for (const [, mod] of cache) {
+            if (seen.has(mod)) continue;
+            seen.add(mod);
+            if (typeof mod.execute !== 'function') continue;
+            list.push({
+                name: mod.name || 'unknown',
+                category: (mod.category || 'general').toLowerCase(),
+                description: mod.description || '',
+                aliases: Array.isArray(mod.aliases) ? mod.aliases : []
+            });
+        }
+
+        for (const [, mod] of auto) {
+            if (seen.has(mod)) continue;
+            seen.add(mod);
+            if (typeof mod.execute !== 'function') {
+                list.push({
+                    name: mod.name || 'unknown',
+                    category: (mod.category || 'auto').toLowerCase(),
+                    description: mod.description || 'Auto-detection module',
+                    aliases: []
+                });
+            }
+        }
+
+        res.json({ success: true, commands: list, total: list.length });
+    } catch (e) {
+        console.error("commands/list:", e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post("/api/admin/commands/run", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        const { command, args } = req.body || {};
+        if (!command) return res.status(400).json({ error: "command required" });
+
+        const handler = require("./handler");
+        const cache = handler.getCommandCache ? handler.getCommandCache() : new Map();
+        const mod = cache.get(String(command).toLowerCase());
+        if (!mod || typeof mod.execute !== 'function') {
+            return res.status(404).json({ error: `Command "${command}" not found` });
+        }
+
+        const activeSessionId = firstActive();
+        const liveSession = activeSessionId ? global.sessions.get(activeSessionId) : null;
+        const conn = liveSession?.conn || null;
+
+        const ownerJid = config.ownerNumber ? config.ownerNumber + "@s.whatsapp.net" : null;
+
+        const captured = [];
+        let fakeConn = conn;
+
+        if (conn) {
+            fakeConn = Object.create(conn);
+            fakeConn.sendMessage = async (jid, content, ...rest) => {
+                captured.push({
+                    jid: typeof jid === "string" ? jid : "(object)",
+                    content: summarizeContent(content)
+                });
+                return { key: { id: "test_" + Date.now() } };
+            };
+        }
+
+        const fakeMsg = {
+            key: {
+                remoteJid: ownerJid || "test@s.whatsapp.net",
+                fromMe: true,
+                id: "test_" + Date.now()
+            },
+            message: { conversation: (config.prefix || ".") + command + (args ? " " + args : "") },
+            pushName: "Admin Test"
+        };
+
+        const fakeCtx = {
+            from: ownerJid || "test@s.whatsapp.net",
+            sender: ownerJid || "test@s.whatsapp.net",
+            fancy: require("./lib/font").fancy,
+            isOwner: true,
+            pushname: "Admin Test",
+            config,
+            conn: fakeConn,
+            msg: fakeMsg,
+            userId: activeSessionId || "test",
+            isGroup: false,
+            isChannel: false,
+            isStatus: false,
+            body: fakeMsg.message.conversation,
+            args: args ? String(args).split(/\s+/) : [],
+            command: String(command).toLowerCase(),
+            prefix: config.prefix || ".",
+            isCmd: true
+        };
+
+        let errorMsg = null;
+        try {
+            await Promise.race([
+                mod.execute(fakeConn, fakeMsg, fakeCtx.args, fakeCtx),
+                new Promise((_, rej) => setTimeout(() => rej(new Error("Command timeout (60s)")), 60000))
+            ]);
+        } catch (e) {
+            errorMsg = e.message;
+        }
+
+        let output = "";
+        if (captured.length) {
+            output = captured.map(c => c.content).join("\n\n---\n\n");
+        } else if (errorMsg) {
+            output = "❌ " + errorMsg;
+        } else {
+            output = "(Command ran but sent no output)";
+        }
+
+        res.json({
+            success: !errorMsg,
+            output,
+            captured: captured.length,
+            error: errorMsg || undefined
+        });
+    } catch (e) {
+        console.error("commands/run:", e.message);
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // ============================================
@@ -1599,9 +1757,6 @@ async function bootSocket(sessionId, session) {
     session.conn = conn;
     conn.ev.on("creds.update", saveCreds);
 
-    // ============================================================
-    //   LIVE FEED: WRAP sendMessage TO LOG OUTGOING
-    // ============================================================
     const originalSend = conn.sendMessage.bind(conn);
     conn.sendMessage = async function (jid, content, ...rest) {
         try {
@@ -1650,7 +1805,6 @@ async function bootSocket(sessionId, session) {
 
         return originalSend(jid, content, ...rest);
     };
-    // ============================================================
 
     conn.ev.on("connection.update", async (update) => {
         const { connection, lastDisconnect } = update;
