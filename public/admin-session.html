@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Sessions Control | 303-XMD</title>
+<meta name="theme-color" content="#00ff9d">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔌</text></svg>">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/theme.css">
+<style>
+body.theme-sessions{
+    --g1:#00ff9d;
+    --g2:#00a86b;
+    --glow:rgba(0,255,157,.4);
+    --bg:#001a0f;
+    --bg2:#002a1a;
+}
+
+.stat-row{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+    gap:12px;
+    margin-bottom:20px;
+}
+.stat{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:16px;
+    text-align:center;
+    position:relative;
+    overflow:hidden;
+}
+.stat::before{
+    content:'';
+    position:absolute;
+    top:0; left:20%; right:20%;
+    height:2px;
+    background:linear-gradient(90deg,transparent,var(--g1),transparent);
+    opacity:.7;
+}
+.stat .num{
+    font-size:24px;
+    font-weight:800;
+    background:linear-gradient(135deg,var(--g1),var(--g2));
+    -webkit-background-clip:text;
+    background-clip:text;
+    color:transparent;
+}
+.stat .lbl{
+    font-size:10px;
+    color:var(--muted);
+    letter-spacing:2px;
+    text-transform:uppercase;
+    margin-top:6px;
+}
+
+.session-card{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:18px 20px;
+    margin-bottom:12px;
+    position:relative;
+    overflow:hidden;
+    transition:.2s;
+}
+.session-card::before{
+    content:'';
+    position:absolute;
+    left:0; top:0; bottom:0;
+    width:4px;
+    transition:.2s;
+}
+.session-card.online::before{
+    background:linear-gradient(180deg,#00ff9d,#00a86b);
+    box-shadow:0 0 12px rgba(0,255,157,.6);
+}
+.session-card.offline::before{
+    background:linear-gradient(180deg,#ff5252,#b30000);
+    box-shadow:0 0 12px rgba(255,82,82,.6);
+}
+.session-card.paused::before{
+    background:linear-gradient(180deg,#ffb347,#d97706);
+    box-shadow:0 0 12px rgba(255,179,71,.6);
+}
+.session-card:hover{
+    border-color:var(--g1);
+    transform:translateY(-1px);
+}
+
+.sc-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+    flex-wrap:wrap;
+    margin-bottom:10px;
+}
+.sc-phone{
+    font-size:15px;
+    font-weight:700;
+    color:#fff;
+    word-break:break-all;
+}
+.sc-status{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    font-size:10px;
+    font-weight:800;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    padding:4px 10px;
+    border-radius:20px;
+}
+.sc-status.online{
+    background:rgba(0,255,157,.12);
+    color:#00ff9d;
+    border:1px solid rgba(0,255,157,.4);
+}
+.sc-status.offline{
+    background:rgba(255,82,82,.12);
+    color:#ff9999;
+    border:1px solid rgba(255,82,82,.4);
+}
+.sc-status.paused{
+    background:rgba(255,179,71,.12);
+    color:#ffb347;
+    border:1px solid rgba(255,179,71,.4);
+}
+.sc-status .dot{
+    width:6px; height:6px;
+    border-radius:50%;
+    background:currentColor;
+    animation:blink 1.4s infinite;
+}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+
+.sc-meta{
+    font-size:11px;
+    color:var(--muted);
+    line-height:1.7;
+    margin-bottom:14px;
+    word-break:break-all;
+}
+.sc-meta b{ color:#bcd }
+
+.sc-actions{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+}
+.sc-btn{
+    padding:10px 14px;
+    border-radius:10px;
+    border:1px solid var(--border);
+    background:rgba(255,255,255,.03);
+    color:var(--text);
+    font-size:12px;
+    font-weight:700;
+    letter-spacing:1px;
+    cursor:pointer;
+    transition:.2s;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    font-family:inherit;
+}
+.sc-btn:hover:not(:disabled){ transform:translateY(-1px); }
+.sc-btn:disabled{ opacity:.4; cursor:not-allowed; }
+.sc-btn.power-off{
+    background:rgba(255,82,82,.1);
+    border-color:rgba(255,82,82,.4);
+    color:#ff9999;
+}
+.sc-btn.power-off:hover:not(:disabled){
+    background:#ff5252;
+    color:#000;
+}
+.sc-btn.power-on{
+    background:rgba(0,255,157,.1);
+    border-color:rgba(0,255,157,.4);
+    color:#00ff9d;
+}
+.sc-btn.power-on:hover:not(:disabled){
+    background:#00ff9d;
+    color:#000;
+}
+.sc-btn.ghost{
+    background:transparent;
+}
+.sc-btn.ghost:hover:not(:disabled){
+    background:rgba(255,255,255,.05);
+}
+</style>
+</head>
+<body class="theme-sessions">
+
+<div id="appSidebarMount"></div>
+
+<main class="app-content">
+    <div class="page-head">
+        <div>
+            <h2>Sessions Control</h2>
+            <div class="sub">Turn any session on/off without logging out</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="refreshBtn"><i class="fas fa-rotate"></i> Refresh</button>
+    </div>
+
+    <div class="stat-row">
+        <div class="stat"><div class="num" id="statTotal">0</div><div class="lbl">Total</div></div>
+        <div class="stat"><div class="num" id="statOnline">0</div><div class="lbl">Online</div></div>
+        <div class="stat"><div class="num" id="statPaused">0</div><div class="lbl">Paused</div></div>
+        <div class="stat"><div class="num" id="statOffline">0</div><div class="lbl">Offline</div></div>
+    </div>
+
+    <div id="sessionsRoot">
+        <div class="empty"><i class="fas fa-spinner fa-spin"></i>Loading…</div>
+    </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/sidebar.js"></script>
+<script>
+const ADMIN_EMAIL = 'ryanobanga243@gmail.com';
+const token = localStorage.getItem('token');
+const user = JSON.parse(localStorage.getItem('user') || '{}');
+if (!token) location.href = '/login';
+
+const email = (user.email || '').trim().toLowerCase();
+if (email !== ADMIN_EMAIL.toLowerCase()) {
+    document.body.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;text-align:center"><div><h2>ACCESS DENIED</h2><p style="color:#888">Admin only</p></div></div>`;
+    throw new Error('Not admin');
+}
+
+const sessionsRoot = document.getElementById('sessionsRoot');
+const toastEl = document.getElementById('toast');
+
+let allSessions = [];
+
+function toast(msg, err = false) {
+    toastEl.textContent = msg;
+    toastEl.classList.toggle('err', err);
+    toastEl.classList.add('show');
+    setTimeout(() => toastEl.classList.remove('show'), 2200);
+}
+
+function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+}
+
+function fmtTime(ts) {
+    if (!ts) return '—';
+    return new Date(ts).toLocaleString();
+}
+
+function getStatusClass(s) {
+    if (s.paused) return 'paused';
+    if (s.connected) return 'online';
+    return 'offline';
+}
+
+function getStatusLabel(s) {
+    if (s.paused) return 'PAUSED';
+    if (s.connected) return 'ONLINE';
+    return 'OFFLINE';
+}
+
+async function loadSessions() {
+    try {
+        const r = await fetch('/api/admin/sessions/status', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed');
+
+        allSessions = d.sessions || [];
+        render();
+    } catch (e) {
+        sessionsRoot.innerHTML = `<div class="empty">❌ ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function render() {
+    const online = allSessions.filter(s => s.connected && !s.paused).length;
+    const paused = allSessions.filter(s => s.paused).length;
+    const offline = allSessions.filter(s => !s.connected && !s.paused).length;
+
+    document.getElementById('statTotal').textContent = allSessions.length;
+    document.getElementById('statOnline').textContent = online;
+    document.getElementById('statPaused').textContent = paused;
+    document.getElementById('statOffline').textContent = offline;
+
+    if (!allSessions.length) {
+        sessionsRoot.innerHTML = '<div class="empty"><i class="fas fa-plug"></i>No sessions paired yet</div>';
+        return;
+    }
+
+    sessionsRoot.innerHTML = allSessions.map(s => {
+        const cls = getStatusClass(s);
+        const label = getStatusLabel(s);
+        const canPause = s.connected && !s.paused;
+        const canResume = !s.connected && s.paused;
+
+        return `
+            <div class="session-card ${cls}">
+                <div class="sc-head">
+                    <div class="sc-phone">📱 +${escapeHtml(s.phone)}</div>
+                    <div class="sc-status ${cls}">
+                        ${cls === 'online' ? '<span class="dot"></span>' : ''}
+                        ${label}
+                    </div>
+                </div>
+                <div class="sc-meta">
+                    <b>Session ID:</b> ${escapeHtml(s.sessionId)}<br>
+                    <b>Owner:</b> ${escapeHtml(s.ownerEmail || 'unclaimed')}<br>
+                    <b>Started:</b> ${fmtTime(s.startedAt)}<br>
+                    <b>JID:</b> ${escapeHtml(s.jid || '—')}
+                </div>
+                <div class="sc-actions">
+                    <button class="sc-btn power-on" data-act="resume" data-id="${escapeHtml(s.sessionId)}" ${canResume ? '' : 'disabled'}>
+                        <i class="fas fa-power-off"></i> Turn ON
+                    </button>
+                    <button class="sc-btn power-off" data-act="pause" data-id="${escapeHtml(s.sessionId)}" ${canPause ? '' : 'disabled'}>
+                        <i class="fas fa-pause"></i> Turn OFF
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    sessionsRoot.querySelectorAll('button[data-act]').forEach(btn => {
+        btn.addEventListener('click', () => onAction(btn));
+    });
+}
+
+async function onAction(btn) {
+    const act = btn.dataset.act;
+    const id = btn.dataset.id;
+    const label = act === 'pause' ? 'Turn OFF' : 'Turn ON';
+
+    if (!confirm(`${label} session ${id.slice(0, 20)}…?`)) return;
+
+    btn.disabled = true;
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+    try {
+        const r = await fetch(`/api/admin/sessions/${act}/${encodeURIComponent(id)}`, {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed');
+
+        toast(d.message || 'Done');
+        setTimeout(loadSessions, 800);
+    } catch (e) {
+        toast(e.message, true);
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+    }
+}
+
+document.getElementById('refreshBtn').onclick = () => { loadSessions(); toast('Refreshed'); };
+
+loadSessions();
+setInterval(loadSessions, 8000);
+</script>
+</body>
+</html>
