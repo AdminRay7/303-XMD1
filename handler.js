@@ -342,9 +342,14 @@ module.exports = async (conn, m, userId = "default") => {
             }
         }
 
-        // ================= AI AUTO-REPLY (per session) =================
+        // ================= AI AUTO-REPLY =================
         else if (!isCmd && !isOwner && !isGroup && body && config.aiChatEnabled) {
             try {
+                // Show typing indicator
+                if (config.autoTyping) {
+                    try { await conn.sendPresenceUpdate('composing', from); } catch {}
+                }
+
                 const reply = await aiChat.askAI(body, userId, config.aiSystemPrompt);
                 if (reply) {
                     await conn.sendMessage(from, { text: reply }, { quoted: msg });
