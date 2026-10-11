@@ -30,9 +30,14 @@ module.exports = {
                     .map(e => e.toLowerCase()),
 
     // ---- AI chat ----
-    aiChatEnabled:  bool(process.env.AI_CHAT_ENABLED, false),
-    aiSystemPrompt: str(process.env.AI_SYSTEM_PROMPT,
-        "You are 303-XMD, a friendly WhatsApp assistant. Keep replies under 300 chars unless asked for detail."),
+    aiChatEnabled:      bool(process.env.AI_CHAT_ENABLED, false),
+    aiChatGroups:       bool(process.env.AI_CHAT_GROUPS, true),
+    aiGroupRateLimit:   num(process.env.AI_GROUP_RATE_LIMIT, 3),
+    aiGroupSkipChance:  num(process.env.AI_GROUP_SKIP_CHANCE, 0.15),
+    aiTypingDelayMin:   num(process.env.AI_TYPING_DELAY_MIN, 2000),
+    aiTypingDelayMax:   num(process.env.AI_TYPING_DELAY_MAX, 7000),
+    aiSystemPrompt:     str(process.env.AI_SYSTEM_PROMPT,
+        "You are a normal person chatting in a WhatsApp group. Keep replies very short, casual, human. Use emojis occasionally. Never mention you are an AI or bot. Reply in the same language the group uses. Don't use markdown, headers, or bullet points."),
 
     prefix:      str(process.env.PREFIX,       "."),
     footer:      str(process.env.FOOTER,       "303-XMD — THE LAST KEY"),
@@ -69,7 +74,7 @@ module.exports = {
     autoRead:    bool(process.env.AUTO_READ,   true),
     autoReact:   bool(process.env.AUTO_REACT,  true),
     autoSave:    bool(process.env.AUTO_SAVE,   true),
-    autoTyping:  bool(process.env.AUTO_TYPING, false),
+    autoTyping:  bool(process.env.AUTO_TYPING, true),
     anticall:    bool(process.env.ANTICALL,    true),
     antibug:     bool(process.env.ANTIBUG,     true),
     antispam:    bool(process.env.ANTISPAM,    true),
