@@ -129,6 +129,7 @@ app.get("/web",             (req, res) => servePage(res, "web.html"));
 app.get("/channel",         (req, res) => servePage(res, "channel.html"));
 app.get("/admin",           (req, res) => servePage(res, "admin.html"));
 app.get("/admin-commands",  (req, res) => servePage(res, "admin-commands.html"));
+app.get("/admin-sessions",  (req, res) => servePage(res, "admin-sessions.html"));
 app.get("/admin-audit",     (req, res) => servePage(res, "admin-audit.html"));
 app.get("/admin-analytics", (req, res) => servePage(res, "admin-analytics.html"));
 app.get("/admin-backup",    (req, res) => servePage(res, "admin-backup.html"));
@@ -354,6 +355,7 @@ app.post("/api/user/sessions/reconnect-all", auth.requireAuth, async (req, res) 
         for (const s of userSessions) {
             const live = global.sessions.get(s.sessionId);
             if (live?.conn?.user) continue;
+            if (live?._paused) continue;
             const session = live || {
                 conn: null, socketReady: false, pairing: null, pairingNumber: null,
                 startedAt: Date.now(), welcomed: false
@@ -383,6 +385,7 @@ app.post("/api/user/sessions/:sessionId/reconnect", auth.requireAuth, async (req
             conn: null, socketReady: false, pairing: null, pairingNumber: null,
             startedAt: Date.now(), welcomed: false
         };
+        session._paused = false;
         global.sessions.set(sessionId, session);
         try { await bootSocket(sessionId, session); res.json({ success: true, message: "Reconnecting…" }); }
         catch (e) { res.status(500).json({ error: e.message }); }
@@ -710,6 +713,136 @@ app.post("/api/admin/broadcast", adminAuth.requireAdmin, async (req, res) => {
 
         res.json({ success: true, sent, failed });
     } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============================================
+//   ADMIN — SESSION CONTROL (on/off toggle)
+// ============================================
+app.get("/api/admin/sessions/status", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        const all = await SessionSettings.find({}).lean();
+
+        const list = all.map(s => {
+            const live = global.sessions.get(s.sessionId);
+            const running = !!live;
+            const connected = !!live?.conn?.user;
+            const manuallyOff = live?._paused === true;
+
+            return {
+                sessionId: s.sessionId,
+                phone: s.phoneNumber || "pending",
+                ownerAccountId: s.ownerAccountId || null,
+                running,
+                connected,
+                paused: manuallyOff,
+                jid: live?.conn?.user?.id || null,
+                startedAt: live?.startedAt || null
+            };
+        });
+
+        for (const [id, live] of global.sessions) {
+            if (!list.find(x => x.sessionId === id)) {
+                list.push({
+                    sessionId: id,
+                    phone: live?.conn?.user?.id?.split(":")[0] || "unknown",
+                    ownerAccountId: null,
+                    running: true,
+                    connected: !!live?.conn?.user,
+                    paused: live?._paused === true,
+                    jid: live?.conn?.user?.id || null,
+                    startedAt: live?.startedAt || null
+                });
+            }
+        }
+
+        for (const s of list) {
+            if (s.ownerAccountId) {
+                try {
+                    const acc = await Account.findById(s.ownerAccountId).select("email").lean();
+                    s.ownerEmail = acc?.email || null;
+                } catch {}
+            }
+        }
+
+        res.json({ success: true, sessions: list, total: list.length });
+    } catch (e) {
+        console.error("sessions/status:", e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post("/api/admin/sessions/pause/:sessionId", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        const sessionId = req.params.sessionId;
+        const live = global.sessions.get(sessionId);
+        if (!live) {
+            return res.status(404).json({ error: "Session not running" });
+        }
+
+        live._paused = true;
+
+        try {
+            live.conn?.ev?.removeAllListeners();
+            live.conn?.ws?.close();
+        } catch (e) { console.error("pause socket close:", e.message); }
+
+        live.conn = null;
+        live.socketReady = false;
+
+        await auditLog.log(req, "session_pause", {
+            target: sessionId,
+            targetType: "session"
+        }).catch(() => {});
+
+        res.json({ success: true, message: "Session paused", sessionId });
+    } catch (e) {
+        console.error("sessions/pause:", e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post("/api/admin/sessions/resume/:sessionId", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        const sessionId = req.params.sessionId;
+
+        let live = global.sessions.get(sessionId);
+
+        if (!live) {
+            live = {
+                conn: null,
+                socketReady: false,
+                pairing: null,
+                pairingNumber: null,
+                startedAt: Date.now(),
+                welcomed: true,
+                _paused: false
+            };
+            global.sessions.set(sessionId, live);
+        }
+
+        live._paused = false;
+
+        if (live.conn?.user) {
+            return res.json({ success: true, message: "Already running", sessionId });
+        }
+
+        try {
+            await bootSocket(sessionId, live);
+        } catch (e) {
+            console.error("sessions/resume boot:", e.message);
+            return res.status(500).json({ error: "Failed to boot socket: " + e.message });
+        }
+
+        await auditLog.log(req, "session_resume", {
+            target: sessionId,
+            targetType: "session"
+        }).catch(() => {});
+
+        res.json({ success: true, message: "Session resumed", sessionId });
+    } catch (e) {
+        console.error("sessions/resume:", e.message);
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // ============================================
@@ -1861,6 +1994,12 @@ async function bootSocket(sessionId, session) {
             session.socketReady = false;
             const code = lastDisconnect?.error?.output?.statusCode;
             console.log(fancy(`❌ [${sessionId}] closed (${code})`));
+
+            if (session._paused) {
+                console.log(fancy(`⏸️ [${sessionId}] paused — not reconnecting`));
+                return;
+            }
+
             if (code === 401 || code === DisconnectReason.loggedOut) {
                 await logoutSession(sessionId);
                 return;
@@ -1868,6 +2007,7 @@ async function bootSocket(sessionId, session) {
             if (code === 440) return;
             setTimeout(() => {
                 if (!global.sessions.has(sessionId)) return;
+                if (session._paused) return;
                 bootSocket(sessionId, session).catch(e => console.error(`Reconnect ${sessionId}:`, e.message));
             }, 5000);
         }
