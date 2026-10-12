@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>User Management | 303-XMD</title>
+<meta name="theme-color" content="#ffcc66">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👥</text></svg>">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/theme.css">
+<style>
+body.theme-users{
+    --g1:#ffcc66;
+    --g2:#d97706;
+    --glow:rgba(255,204,102,.4);
+    --bg:#1a1200;
+    --bg2:#2e2000;
+}
+
+.search-bar{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:14px;
+    margin-bottom:16px;
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+}
+.search-bar input{
+    flex:1;
+    min-width:200px;
+    padding:10px 14px;
+    background:rgba(0,0,0,.4);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-radius:10px;
+    font-size:13px;
+    outline:none;
+}
+.search-bar input:focus{ border-color:var(--g1); box-shadow:0 0 15px var(--glow); }
+
+.user-card{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:16px 18px;
+    margin-bottom:10px;
+    position:relative;
+    overflow:hidden;
+}
+.user-card::before{
+    content:'';
+    position:absolute;
+    left:0; top:0; bottom:0;
+    width:3px;
+    background:linear-gradient(180deg,var(--g1),var(--g2));
+}
+.user-card.banned::before{
+    background:linear-gradient(180deg,#ff5252,#b30000);
+}
+.uc-head{
+    display:flex;
+    justify-content:space-between;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:center;
+    margin-bottom:8px;
+}
+.uc-email{
+    font-size:14px;
+    font-weight:700;
+    color:#fff;
+    word-break:break-all;
+}
+.badge{
+    display:inline-flex;
+    align-items:center;
+    gap:5px;
+    padding:3px 9px;
+    border-radius:20px;
+    font-size:9.5px;
+    font-weight:800;
+    letter-spacing:1px;
+    text-transform:uppercase;
+}
+.badge.admin{ background:linear-gradient(135deg,var(--g1),var(--g2)); color:#000; }
+.badge.banned{ background:rgba(255,82,82,.15); color:#ff9999; border:1px solid rgba(255,82,82,.4); }
+.badge.active{ background:rgba(0,229,160,.12); color:#00e5a0; border:1px solid rgba(0,229,160,.4); }
+.uc-meta{
+    font-size:11px;
+    color:var(--muted);
+    line-height:1.6;
+    margin-bottom:12px;
+}
+.uc-meta b{ color:#bcd }
+.uc-actions{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(110px,1fr));
+    gap:6px;
+}
+.uc-btn{
+    padding:8px 10px;
+    border-radius:8px;
+    border:1px solid var(--border);
+    background:rgba(255,255,255,.03);
+    color:var(--text);
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.5px;
+    cursor:pointer;
+    transition:.2s;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:5px;
+    font-family:inherit;
+}
+.uc-btn:hover:not(:disabled){ transform:translateY(-1px); background:rgba(255,255,255,.06); }
+.uc-btn:disabled{ opacity:.4; cursor:not-allowed; }
+.uc-btn.danger{ color:#ff9999; border-color:rgba(255,82,82,.35); }
+.uc-btn.danger:hover:not(:disabled){ background:#ff5252; color:#000; }
+.uc-btn.gold{ color:var(--g1); border-color:rgba(255,204,102,.4); }
+.uc-btn.gold:hover:not(:disabled){ background:var(--g1); color:#000; }
+</style>
+</head>
+<body class="theme-users">
+
+<div id="appSidebarMount"></div>
+
+<main class="app-content">
+    <div class="page-head">
+        <div>
+            <h2>User Management</h2>
+            <div class="sub">Ban, unban, adjust credits, promote</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="refreshBtn"><i class="fas fa-rotate"></i> Refresh</button>
+    </div>
+
+    <div class="search-bar">
+        <input type="text" id="searchInput" placeholder="🔍 Search by email…">
+        <button class="btn btn-primary" id="searchBtn"><i class="fas fa-search"></i> Search</button>
+    </div>
+
+    <div id="usersRoot">
+        <div class="empty"><i class="fas fa-spinner fa-spin"></i>Loading…</div>
+    </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/sidebar.js"></script>
+<script>
+const ADMIN_EMAIL = 'ryanobanga243@gmail.com';
+const token = localStorage.getItem('token');
+const user = JSON.parse(localStorage.getItem('user') || '{}');
+if (!token) location.href = '/login';
+const email = (user.email || '').trim().toLowerCase();
+if (email !== ADMIN_EMAIL.toLowerCase()) {
+    document.body.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#fff;font-family:sans-serif"><h2>ACCESS DENIED</h2></div>`;
+    throw new Error('Not admin');
+}
+
+const usersRoot = document.getElementById('usersRoot');
+const searchInput = document.getElementById('searchInput');
+const toastEl = document.getElementById('toast');
+
+function toast(msg, err = false) {
+    toastEl.textContent = msg;
+    toastEl.classList.toggle('err', err);
+    toastEl.classList.add('show');
+    setTimeout(() => toastEl.classList.remove('show'), 2200);
+}
+function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function loadUsers(q = '') {
+    usersRoot.innerHTML = `<div class="empty"><i class="fas fa-spinner fa-spin"></i>Loading…</div>`;
+    try {
+        const r = await fetch('/api/admin/accounts' + (q ? '?q=' + encodeURIComponent(q) : ''), {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed');
+
+        const users = d.accounts || [];
+        if (!users.length) {
+            usersRoot.innerHTML = `<div class="empty"><i class="fas fa-users"></i>No users found</div>`;
+            return;
+        }
+
+        usersRoot.innerHTML = users.map(u => {
+            const isBanned = u.isBanned === true;
+            return `
+                <div class="user-card ${isBanned ? 'banned' : ''}">
+                    <div class="uc-head">
+                        <div class="uc-email">${escapeHtml(u.email)}</div>
+                        <div>
+                            ${u.isAdmin ? '<span class="badge admin"><i class="fas fa-crown"></i> Admin</span>' : ''}
+                            ${isBanned ? '<span class="badge banned"><i class="fas fa-ban"></i> Banned</span>' : '<span class="badge active"><i class="fas fa-circle-check"></i> Active</span>'}
+                        </div>
+                    </div>
+                    <div class="uc-meta">
+                        <b>Name:</b> ${escapeHtml(u.name || '—')}<br>
+                        <b>Credits:</b> ${u.credits || 0} · <b>Max sessions:</b> ${u.maxSessions || 0}<br>
+                        <b>Joined:</b> ${u.createdAt ? new Date(u.createdAt).toLocaleString() : '—'}<br>
+                        <b>Last login:</b> ${u.lastLogin ? new Date(u.lastLogin).toLocaleString() : 'never'}
+                    </div>
+                    <div class="uc-actions">
+                        <button class="uc-btn gold" data-act="credits" data-id="${escapeHtml(u._id)}"><i class="fas fa-coins"></i> Credits</button>
+                        <button class="uc-btn gold" data-act="promote" data-id="${escapeHtml(u._id)}" data-admin="${u.isAdmin ? '1' : '0'}">
+                            <i class="fas fa-crown"></i> ${u.isAdmin ? 'Demote' : 'Promote'}
+                        </button>
+                        <button class="uc-btn ${isBanned ? 'gold' : 'danger'}" data-act="ban" data-id="${escapeHtml(u._id)}" data-banned="${isBanned ? '1' : '0'}">
+                            <i class="fas fa-ban"></i> ${isBanned ? 'Unban' : 'Ban'}
+                        </button>
+                        <button class="uc-btn danger" data-act="delete" data-id="${escapeHtml(u._id)}"><i class="fas fa-trash"></i> Delete</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        usersRoot.querySelectorAll('button[data-act]').forEach(btn => {
+            btn.addEventListener('click', () => onAction(btn));
+        });
+    } catch (e) {
+        usersRoot.innerHTML = `<div class="empty">❌ ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+async function onAction(btn) {
+    const act = btn.dataset.act;
+    const id = btn.dataset.id;
+
+    if (act === 'credits') {
+        const v = prompt('New credit amount:', '100');
+        if (v === null) return;
+        const n = parseInt(v, 10);
+        if (isNaN(n)) return toast('Invalid number', true);
+        await updateUser(id, { credits: n });
+    } else if (act === 'promote') {
+        const isAdmin = btn.dataset.admin === '1';
+        if (!confirm(`${isAdmin ? 'Demote' : 'Promote'} this user?`)) return;
+        await updateUser(id, { isAdmin: !isAdmin });
+    } else if (act === 'ban') {
+        const isBanned = btn.dataset.banned === '1';
+        if (!confirm(`${isBanned ? 'Unban' : 'Ban'} this user?`)) return;
+        await updateUser(id, { isBanned: !isBanned });
+    } else if (act === 'delete') {
+        if (!confirm('Delete this account permanently?')) return;
+        try {
+            const r = await fetch('/api/admin/accounts/' + encodeURIComponent(id), {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d.error);
+            toast('Deleted');
+            loadUsers(searchInput.value);
+        } catch (e) { toast(e.message, true); }
+    }
+}
+
+async function updateUser(id, body) {
+    try {
+        const r = await fetch('/api/admin/accounts/' + encodeURIComponent(id), {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error);
+        toast('Updated');
+        loadUsers(searchInput.value);
+    } catch (e) { toast(e.message, true); }
+}
+
+document.getElementById('refreshBtn').onclick = () => loadUsers(searchInput.value);
+document.getElementById('searchBtn').onclick = () => loadUsers(searchInput.value);
+searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') loadUsers(searchInput.value); });
+
+loadUsers();
+</script>
+</body>
+</html>
