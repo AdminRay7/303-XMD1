@@ -1,6 +1,6 @@
 // ============================================================
 //   303-XMD — handler.js
-//   Auto-detects + analytics + AI auto-reply (DM + group)
+//   Auto-detects + analytics + AI (text + vision, conversational)
 // ============================================================
 const fs = require('fs-extra');
 const path = require('path');
@@ -12,6 +12,8 @@ const messageStore = require('./lib/messageStore');
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 const analytics = require('./lib/analytics');
 const aiChat = require('./lib/aiChat');
+const aiVision = require('./lib/aiVision');
+const aiSettings = require('./lib/aiSettings');
 const humanChat = require('./lib/humanChat');
 
 // ================= HOT-RELOAD COMMAND LOADER =================
@@ -302,46 +304,109 @@ module.exports = async (conn, m, userId = "default") => {
             }
         }
 
-        // ================= AI AUTO-REPLY — DM + GROUP (no limits) =================
-        else if (!isCmd && !isOwner && body && config.aiChatEnabled) {
-            if (!body.trim()) return;
-            if (humanChat.hasReplied(msg.key.id)) return;
+        // ============================================================
+        //   AI — conversational (text + vision, both automatic)
+        // ============================================================
+        else if (!isCmd && !isOwner) {
+            const aiOn = aiSettings.isEnabledCached();
+            const groupsOn = aiSettings.isGroupsEnabledCached();
+            if (!aiOn) return;
+            if (isGroup && !groupsOn) return;
 
-            let prompt = body;
-            let sendOpts = { quoted: msg };
+            const sysPrompt = config.aiSystemPrompt
+                || "You are a normal person chatting on WhatsApp. Keep replies short, casual, human. Use emojis occasionally. Never mention you're an AI. Match the language the person uses. No markdown, no bullet points.";
 
-            if (isGroup) {
-                humanChat.pushContext(from, pushname || sender.split("@")[0], body);
+            // --------------------------------------------------------
+            //   PHOTO arrives → react + save for follow-ups
+            // --------------------------------------------------------
+            if (type === "imageMessage") {
+                try {
+                    const stream = await downloadContentFromMessage(msg.message.imageMessage, "image");
+                    const chunks = [];
+                    let total = 0;
+                    const MAX = 5 * 1024 * 1024;
+                    for await (const c of stream) {
+                        total += c.length;
+                        if (total > MAX) throw new Error("Image > 5MB");
+                        chunks.push(c);
+                    }
+                    const buffer = Buffer.concat(chunks);
 
-                const context = humanChat.getContext(from, 15);
-                if (context) {
-                    prompt =
-                        `You are chatting in a WhatsApp group. Here is the recent conversation:\n\n` +
-                        `${context}\n\n` +
-                        `Reply naturally to the latest message as a normal group participant. ` +
-                        `Match the language they're using. Keep it short and casual — like texting a friend. ` +
-                        `Don't repeat what others said, add to it or respond to it.`;
+                    // Save for follow-ups BEFORE the AI call (so it's available immediately)
+                    aiVision.setSessionImage(from, buffer, "image/jpeg");
+
+                    if (config.autoTyping) {
+                        try { await conn.sendPresenceUpdate('composing', from); } catch {}
+                    }
+
+                    const delay = isGroup ? 900 + Math.floor(Math.random() * 800) : 500;
+                    await new Promise(r => setTimeout(r, delay));
+
+                    const caption = (msg.message.imageMessage?.caption || "").trim();
+                    const reply = await aiVision.describePhoto(buffer, "image/jpeg", caption, sysPrompt);
+
+                    if (reply) {
+                        await conn.sendMessage(from, { text: reply }, { quoted: msg });
+                    }
+                } catch (e) {
+                    console.error("[vision] photo error:", e.message);
                 }
-
-                sendOpts = Math.random() < 0.4 ? { quoted: msg } : {};
+                return;
             }
 
-            try {
-                const delay = isGroup ? 800 + Math.floor(Math.random() * 700) : 300;
-                await new Promise(r => setTimeout(r, delay));
+            // --------------------------------------------------------
+            //   TEXT arrives → check stored photo, else normal AI chat
+            // --------------------------------------------------------
+            if (type === "conversation" || type === "extendedTextMessage") {
+                if (!body || !body.trim()) return;
+                if (humanChat.hasReplied(msg.key.id)) return;
+
+                const stored = aiVision.getSessionImage(from);
 
                 if (config.autoTyping) {
                     try { await conn.sendPresenceUpdate('composing', from); } catch {}
                 }
 
-                let reply = await aiChat.askAI(prompt, userId, config.aiSystemPrompt);
+                const delay = isGroup ? 800 + Math.floor(Math.random() * 700) : 300;
+                await new Promise(r => setTimeout(r, delay));
 
-                if (reply) {
-                    if (isGroup) reply = humanChat.humanize(reply);
-                    await conn.sendMessage(from, { text: reply }, sendOpts);
+                try {
+                    let reply;
+
+                    // If a photo is still in memory → answer about it
+                    if (stored && stored.buffer) {
+                        reply = await aiVision.answerAboutPhoto(
+                            stored.buffer,
+                            stored.mime,
+                            body,
+                            sysPrompt
+                        );
+                        // Refresh TTL so conversation can keep going
+                        aiVision.setSessionImage(from, stored.buffer, stored.mime);
+                    }
+                    // Otherwise → normal text AI
+                    else {
+                        let prompt = body;
+                        if (isGroup) {
+                            humanChat.pushContext(from, pushname || sender.split("@")[0], body);
+                            const context = humanChat.getContext(from, 15);
+                            if (context) {
+                                prompt =
+                                    `You are chatting in a WhatsApp group. Recent messages:\n\n${context}\n\n` +
+                                    `Reply naturally to the latest message. Short and casual. Match the language.`;
+                            }
+                        }
+                        reply = await aiChat.askAI(prompt, userId, sysPrompt);
+                    }
+
+                    if (reply) {
+                        if (isGroup) reply = humanChat.humanize(reply);
+                        const opts = isGroup && Math.random() < 0.4 ? { quoted: msg } : {};
+                        await conn.sendMessage(from, { text: reply }, opts);
+                    }
+                } catch (e) {
+                    console.error("aiChat reply error:", e.message);
                 }
-            } catch (e) {
-                console.error("aiChat reply error:", e.message);
             }
         }
 
