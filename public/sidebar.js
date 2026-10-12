@@ -24,6 +24,7 @@
         profile:           'theme-profile',
         admin:             'theme-admin',
         'admin-commands':  'theme-commands',
+        'admin-sessions':  'theme-sessions',
         'admin-audit':     'theme-audit',
         'admin-analytics': 'theme-analytics',
         'admin-backup':    'theme-backup',
@@ -57,6 +58,7 @@
 
         { sec: 'Admin', admin: true },
         { id: 'admin',             href: '/admin',             icon: 'fa-shield-halved',  label: 'Admin Panel',        admin: true },
+        { id: 'admin-sessions',    href: '/admin-sessions',    icon: 'fa-plug',           label: 'Sessions Control',   admin: true },
         { id: 'admin-commands',    href: '/admin-commands',    icon: 'fa-bolt',           label: 'Commands Playground', admin: true },
         { id: 'admin-analytics',   href: '/admin-analytics',   icon: 'fa-chart-line',     label: 'Analytics',          admin: true },
         { id: 'admin-audit',       href: '/admin-audit',       icon: 'fa-scroll',         label: 'Audit Log',          admin: true },
