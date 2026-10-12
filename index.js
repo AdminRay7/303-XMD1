@@ -6,6 +6,7 @@ const {
     Browsers,
     makeCacheableSignalKeyStore,
     fetchLatestBaileysVersion,
+    fetchLatestWaWebVersion,
     downloadContentFromMessage
 } = require("@whiskeysockets/baileys");
 const { MongoClient } = require("mongodb");
@@ -2213,7 +2214,9 @@ async function bootSocket(sessionId, session) {
 
     const collection = global.mongoClient.db("xmd303").collection("authState");
     const { state, saveCreds } = await useMongoDBAuthState(collection, sessionId);
-    const { version } = await fetchLatestBaileysVersion();
+    const { version } = await fetchLatestWaWebVersion();
+
+    console.log(fancy(`[${sessionId}] WA version: ${JSON.stringify(version)}`));
 
     const conn = makeWASocket({
         version,
