@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Anti-Abuse | 303-XMD</title>
+<meta name="theme-color" content="#ff5252">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/theme.css">
+<style>
+body.theme-abuse{
+    --g1:#ff5252;
+    --g2:#b30000;
+    --glow:rgba(255,82,82,.4);
+    --bg:#0b0a0a;
+    --bg2:#1a0505;
+}
+
+.stat-row{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+    gap:12px;
+    margin-bottom:20px;
+}
+.stat{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:18px;
+    text-align:center;
+    position:relative;
+    overflow:hidden;
+}
+.stat::before{
+    content:'';
+    position:absolute;
+    top:0; left:20%; right:20%;
+    height:2px;
+    background:linear-gradient(90deg,transparent,var(--g1),transparent);
+    opacity:.7;
+}
+.stat .num{
+    font-size:24px;
+    font-weight:800;
+    background:linear-gradient(135deg,var(--g1),var(--g2));
+    -webkit-background-clip:text;
+    background-clip:text;
+    color:transparent;
+}
+.stat .lbl{
+    font-size:10px;
+    color:var(--muted);
+    letter-spacing:2px;
+    text-transform:uppercase;
+    margin-top:6px;
+}
+
+.section{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:18px;
+    margin-bottom:16px;
+    position:relative;
+    overflow:hidden;
+}
+.section::before{
+    content:'';
+    position:absolute;
+    top:0; left:0;
+    width:60px; height:3px;
+    background:linear-gradient(90deg,var(--g1),var(--g2));
+    box-shadow:0 0 15px var(--glow);
+}
+.section h3{
+    font-size:12px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:var(--g1);
+    margin-bottom:14px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+}
+
+.abuse-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+    padding:10px 12px;
+    background:rgba(255,255,255,.03);
+    border-radius:9px;
+    margin-bottom:6px;
+    border-left:2px solid var(--g1);
+    font-size:12px;
+}
+.abuse-row .email{ color:#fff; font-weight:700; word-break:break-all; }
+.abuse-row .time{ color:var(--muted); font-size:10.5px; white-space:nowrap; }
+.abuse-row .reason{ color:#ff9999; font-size:11px; margin-top:3px; }
+.abuse-row .action-badge{
+    padding:3px 8px;
+    border-radius:8px;
+    font-size:9px;
+    font-weight:800;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    white-space:nowrap;
+    flex-shrink:0;
+}
+.action-badge.ban{ background:rgba(255,82,82,.15); color:#ff9999; border:1px solid rgba(255,82,82,.4); }
+.action-badge.unban{ background:rgba(0,229,160,.12); color:#00e5a0; border:1px solid rgba(0,229,160,.4); }
+.action-badge.pause{ background:rgba(255,179,71,.12); color:#ffb347; border:1px solid rgba(255,179,71,.4); }
+.action-badge.resume{ background:rgba(0,229,160,.12); color:#00e5a0; border:1px solid rgba(0,229,160,.4); }
+.action-badge.kill{ background:rgba(255,82,82,.15); color:#ff9999; border:1px solid rgba(255,82,82,.4); }
+.action-badge.other{ background:rgba(255,255,255,.05); color:#bcd; border:1px solid var(--border); }
+
+.empty-small{
+    text-align:center;
+    color:var(--muted);
+    font-size:12px;
+    padding:16px;
+}
+</style>
+</head>
+<body class="theme-abuse">
+
+<div id="appSidebarMount"></div>
+
+<main class="app-content">
+    <div class="page-head">
+        <div>
+            <h2>Anti-Abuse Dashboard</h2>
+            <div class="sub">Recent bans, blocks, and abuse actions</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="refreshBtn"><i class="fas fa-rotate"></i> Refresh</button>
+    </div>
+
+    <div class="stat-row">
+        <div class="stat"><div class="num" id="statBanned">0</div><div class="lbl">Banned Users</div></div>
+        <div class="stat"><div class="num" id="statBans7d">0</div><div class="lbl">Bans (7d)</div></div>
+        <div class="stat"><div class="num" id="statKills7d">0</div><div class="lbl">Sessions Killed (7d)</div></div>
+        <div class="stat"><div class="num" id="statPauses7d">0</div><div class="lbl">Pauses (7d)</div></div>
+    </div>
+
+    <div class="section">
+        <h3><i class="fas fa-ban"></i> Recent Bans / Unbans</h3>
+        <div id="bansList"><div class="empty-small">Loading…</div></div>
+    </div>
+
+    <div class="section">
+        <h3><i class="fas fa-skull"></i> Recent Session Kills</h3>
+        <div id="killsList"><div class="empty-small">Loading…</div></div>
+    </div>
+
+    <div class="section">
+        <h3><i class="fas fa-pause"></i> Recent Pauses / Resumes</h3>
+        <div id="pausesList"><div class="empty-small">Loading…</div></div>
+    </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/sidebar.js"></script>
+<script>
+const ADMIN_EMAIL = 'ryanobanga243@gmail.com';
+const token = localStorage.getItem('token');
+const user = JSON.parse(localStorage.getItem('user') || '{}');
+if (!token) location.href = '/login';
+const email = (user.email || '').trim().toLowerCase();
+if (email !== ADMIN_EMAIL.toLowerCase()) {
+    document.body.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#fff;font-family:sans-serif"><h2>ACCESS DENIED</h2></div>`;
+    throw new Error('Not admin');
+}
+
+function toast(msg, err = false) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.toggle('err', err);
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2200);
+}
+function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmtTime(ts) {
+    if (!ts) return '—';
+    const d = new Date(ts);
+    return d.toLocaleString();
+}
+
+async function loadAbuse() {
+    try {
+        const r = await fetch('/api/admin/abuse', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed');
+
+        document.getElementById('statBanned').textContent = d.stats.banned || 0;
+        document.getElementById('statBans7d').textContent = d.stats.bans7d || 0;
+        document.getElementById('statKills7d').textContent = d.stats.kills7d || 0;
+        document.getElementById('statPauses7d').textContent = d.stats.pauses7d || 0;
+
+        renderList('bansList', d.bans, 'No recent bans');
+        renderList('killsList', d.kills, 'No recent kills');
+        renderList('pausesList', d.pauses, 'No recent pauses');
+    } catch (e) {
+        toast(e.message, true);
+    }
+}
+
+function renderList(id, rows, emptyMsg) {
+    const box = document.getElementById(id);
+    if (!rows || !rows.length) {
+        box.innerHTML = `<div class="empty-small">${escapeHtml(emptyMsg)}</div>`;
+        return;
+    }
+
+    box.innerHTML = rows.slice(0, 15).map(r => {
+        const badgeClass = r.action.includes('ban') ? 'ban'
+                         : r.action.includes('kill') ? 'kill'
+                         : r.action.includes('pause') ? 'pause'
+                         : r.action.includes('resume') ? 'resume'
+                         : r.action.includes('unban') ? 'unban'
+                         : 'other';
+        return `
+            <div class="abuse-row">
+                <div>
+                    <div class="email">${escapeHtml(r.target || r.adminEmail || 'unknown')}</div>
+                    <div class="reason">by ${escapeHtml(r.adminEmail || '—')}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <span class="action-badge ${badgeClass}">${escapeHtml(r.action)}</span>
+                    <span class="time">${escapeHtml(fmtTime(r.timestamp))}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+document.getElementById('refreshBtn').onclick = () => { loadAbuse(); toast('Refreshed'); };
+
+loadAbuse();
+setInterval(loadAbuse, 15000);
+</script>
+</body>
+</html>
