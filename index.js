@@ -45,6 +45,7 @@ if (config.mongodb) {
 // ---------------- GLOBAL STATE ----------------
 global.sessions = new Map();
 global.mongoClient = null;
+global.__debugCapture = null;
 
 const MAX_SESSIONS = 12;
 let pairingQueue = Promise.resolve();
@@ -109,7 +110,7 @@ function summarizeContent(content) {
 }
 
 // ============================================================
-//   LIVE FEED — INCOMING MEDIA CAPTURE
+//   LIVE FEED — INCOMING MEDIA CAPTURE (v2)
 // ============================================================
 async function captureIncomingMedia(conn, msg, sessionId) {
     const liveFeed = require("./lib/liveFeed");
@@ -118,23 +119,68 @@ async function captureIncomingMedia(conn, msg, sessionId) {
     const from = msg.key.remoteJid;
     const sender = msg.key.participant || msg.key.remoteJid;
     const pushname = msg.pushName || sender.split("@")[0];
-    const type = Object.keys(msg.message || {})[0];
-
-    const isGroup = from.endsWith("@g.us");
-    const isStatus = from === "status@broadcast";
 
     // Skip channels — they have their own handler
     if (from.endsWith("@newsletter")) return;
 
-    // Extract text / caption
-    let text = "";
-    if (type === "conversation") text = msg.message.conversation || "";
-    else if (type === "extendedTextMessage") text = msg.message.extendedTextMessage?.text || "";
-    else if (type === "imageMessage") text = msg.message.imageMessage?.caption || "";
-    else if (type === "videoMessage") text = msg.message.videoMessage?.caption || "";
-    else if (type === "documentMessage") text = msg.message.documentMessage?.caption || "";
+    // ============================================================
+    //   UNWRAP nested message types (ephemeral, view-once, edited)
+    // ============================================================
+    let inner = msg.message || {};
+    let guard = 0;
+    while (guard++ < 5) {
+        if (inner.ephemeralMessage?.message) { inner = inner.ephemeralMessage.message; continue; }
+        if (inner.viewOnceMessage?.message)  { inner = inner.viewOnceMessage.message; continue; }
+        if (inner.viewOnceMessageV2?.message) { inner = inner.viewOnceMessageV2.message; continue; }
+        if (inner.viewOnceMessageV2Extension?.message) { inner = inner.viewOnceMessageV2Extension.message; continue; }
+        if (inner.editedMessage?.message)    { inner = inner.editedMessage.message; continue; }
+        if (inner.documentWithCaptionMessage?.message) { inner = inner.documentWithCaptionMessage.message; continue; }
+        break;
+    }
 
-    // Detect media
+    const type = Object.keys(inner)[0];
+    if (!type) return;
+
+    // DEBUG: capture raw structure
+    if (Array.isArray(global.__debugCapture) && global.__debugCapture.length < 5) {
+        try {
+            global.__debugCapture.push({
+                key: msg.key,
+                type,
+                inner: JSON.parse(JSON.stringify(inner, (k, v) => Buffer.isBuffer(v) ? `[Buffer:${v.length}]` : v)),
+                timestamp: new Date()
+            });
+        } catch (e) {
+            global.__debugCapture.push({ error: e.message, type });
+        }
+    }
+
+    // ============================================================
+    //   SKIP protocol messages (status deletes, reads, etc)
+    // ============================================================
+    const SKIP_TYPES = [
+        "protocolMessage",
+        "senderKeyDistributionMessage",
+        "messageContextInfo",
+        "deviceSentMessage",
+        "reactionMessage"
+    ];
+    if (SKIP_TYPES.includes(type)) return;
+
+    // ============================================================
+    //   EXTRACT text
+    // ============================================================
+    let text = "";
+    if (type === "conversation") text = inner.conversation || "";
+    else if (type === "extendedTextMessage") text = inner.extendedTextMessage?.text || "";
+    else if (type === "imageMessage") text = inner.imageMessage?.caption || "";
+    else if (type === "videoMessage") text = inner.videoMessage?.caption || "";
+    else if (type === "documentMessage") text = inner.documentMessage?.caption || "";
+    else if (type === "ptvMessage") text = inner.ptvMessage?.caption || "";
+
+    // ============================================================
+    //   DETECT + save media
+    // ============================================================
     let mediaType = null;
     let mediaPath = null;
     let mediaSize = null;
@@ -143,6 +189,7 @@ async function captureIncomingMedia(conn, msg, sessionId) {
     const map = {
         imageMessage:    { kind: "image",    ext: "jpg",  mime: "image/jpeg" },
         videoMessage:    { kind: "video",    ext: "mp4",  mime: "video/mp4" },
+        ptvMessage:      { kind: "video",    ext: "mp4",  mime: "video/mp4" },
         audioMessage:    { kind: "audio",    ext: "mp3",  mime: "audio/mpeg" },
         stickerMessage:  { kind: "sticker",  ext: "webp", mime: "image/webp" },
         documentMessage: { kind: "document", ext: "bin",  mime: "application/octet-stream" }
@@ -153,33 +200,43 @@ async function captureIncomingMedia(conn, msg, sessionId) {
         mediaType = info.kind;
 
         try {
-            const stream = await downloadContentFromMessage(msg.message[type], info.kind);
+            const stream = await downloadContentFromMessage(inner[type], info.kind);
             const chunks = [];
             let total = 0;
-            const MAX = 8 * 1024 * 1024;  // 8 MB limit
+            const MAX = 16 * 1024 * 1024;
             for await (const c of stream) {
                 total += c.length;
-                if (total > MAX) throw new Error("Media > 8MB");
+                if (total > MAX) throw new Error("Media > 16MB");
                 chunks.push(c);
             }
             const buffer = Buffer.concat(chunks);
             mediaSize = buffer.length;
 
             if (info.kind === "document") {
-                fileName = msg.message.documentMessage?.fileName || "file";
+                fileName = inner.documentMessage?.fileName || "file";
             }
 
             mediaPath = mediaCache.saveMedia(sessionId, buffer, info.ext, info.mime);
+
+            if (!mediaPath) {
+                console.error(`[capture] saveMedia returned null for ${info.kind}`);
+            } else {
+                console.log(`[capture] saved ${info.kind}: ${mediaPath} (${buffer.length} bytes)`);
+            }
         } catch (e) {
-            console.error("download media:", e.message);
+            console.error(`[capture] download ${info.kind} failed:`, e.message);
         }
     }
 
-    // Bot info
+    // ============================================================
+    //   Bot info + Chat name
+    // ============================================================
     const botJid = conn.user?.id || "";
     const botPhone = botJid.split(":")[0]?.split("@")[0]?.replace(/\D/g, "") || null;
 
-    // Chat name
+    const isGroup = from.endsWith("@g.us");
+    const isStatus = from === "status@broadcast";
+
     let chatName = pushname || sender.split("@")[0];
     if (isGroup) {
         try {
@@ -199,6 +256,11 @@ async function captureIncomingMedia(conn, msg, sessionId) {
         recipientName = "Status";
         recipientJid = "status@broadcast";
         recipientPhone = null;
+    }
+
+    // Skip truly-empty events (no text, no media)
+    if (!text && !mediaType && !["conversation","extendedTextMessage"].includes(type)) {
+        return;
     }
 
     await liveFeed.push({
@@ -720,6 +782,47 @@ app.delete("/api/live/clear", adminAuth.requireAdmin, async (req, res) => {
         await LiveEvent.deleteMany({});
         res.json({ success: true, message: "Live feed cleared" });
     } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============================================
+//   ADMIN — DEBUG
+// ============================================
+app.get("/api/admin/debug/last-message", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        const recent = await LiveEvent.find({}).sort({ timestamp: -1 }).limit(20).lean();
+        res.json({
+            success: true,
+            count: recent.length,
+            events: recent.map(e => ({
+                _id: e._id,
+                sessionId: e.sessionId,
+                type: e.type,
+                text: e.text,
+                mediaType: e.mediaType,
+                mediaPath: e.mediaPath,
+                mediaSize: e.mediaSize,
+                fileName: e.fileName,
+                senderName: e.senderName,
+                senderPhone: e.senderPhone,
+                chatJid: e.chatJid,
+                isGroup: e.isGroup,
+                fromMe: e.fromMe,
+                extra: e.extra,
+                timestamp: e.timestamp
+            }))
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post("/api/admin/debug/capture-next", adminAuth.requireAdmin, (req, res) => {
+    global.__debugCapture = [];
+    res.json({ success: true, message: "Capturing next 5 messages..." });
+});
+
+app.get("/api/admin/debug/captured", adminAuth.requireAdmin, (req, res) => {
+    res.json({ success: true, messages: global.__debugCapture || [] });
 });
 
 // ============================================
@@ -2170,27 +2273,32 @@ async function bootSocket(sessionId, session) {
                 const v = content.image;
                 if (Buffer.isBuffer(v)) mediaPath = trySave(v, "jpg", "image/jpeg");
                 else if (v?.url) mediaPath = v.url;
+                else if (typeof v === "string") mediaPath = v;
             } else if (content?.video) {
                 mediaType = "video";
                 const v = content.video;
                 if (Buffer.isBuffer(v)) mediaPath = trySave(v, "mp4", "video/mp4");
                 else if (v?.url) mediaPath = v.url;
+                else if (typeof v === "string") mediaPath = v;
             } else if (content?.audio) {
                 mediaType = "audio";
                 const v = content.audio;
                 if (Buffer.isBuffer(v)) mediaPath = trySave(v, "mp3", "audio/mpeg");
                 else if (v?.url) mediaPath = v.url;
+                else if (typeof v === "string") mediaPath = v;
             } else if (content?.sticker) {
                 mediaType = "sticker";
                 const v = content.sticker;
                 if (Buffer.isBuffer(v)) mediaPath = trySave(v, "webp", "image/webp");
                 else if (v?.url) mediaPath = v.url;
+                else if (typeof v === "string") mediaPath = v;
             } else if (content?.document) {
                 mediaType = "document";
                 const v = content.document;
                 fileName = v?.fileName || "file";
                 if (Buffer.isBuffer(v)) mediaPath = trySave(v, "bin", v?.mimetype || "application/octet-stream");
                 else if (v?.url) mediaPath = v.url;
+                else if (typeof v === "string") mediaPath = v;
             }
 
             let chatName = String(jid).split("@")[0];
