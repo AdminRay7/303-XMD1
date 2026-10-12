@@ -128,8 +128,12 @@ app.get("/live",            (req, res) => servePage(res, "live.html"));
 app.get("/web",             (req, res) => servePage(res, "web.html"));
 app.get("/channel",         (req, res) => servePage(res, "channel.html"));
 app.get("/admin",           (req, res) => servePage(res, "admin.html"));
-app.get("/admin-commands",  (req, res) => servePage(res, "admin-commands.html"));
 app.get("/admin-sessions",  (req, res) => servePage(res, "admin-sessions.html"));
+app.get("/admin-commands",  (req, res) => servePage(res, "admin-commands.html"));
+app.get("/admin-users",     (req, res) => servePage(res, "admin-users.html"));
+app.get("/admin-broadcast", (req, res) => servePage(res, "admin-broadcast.html"));
+app.get("/admin-takeover",  (req, res) => servePage(res, "admin-takeover.html"));
+app.get("/admin-abuse",     (req, res) => servePage(res, "admin-abuse.html"));
 app.get("/admin-audit",     (req, res) => servePage(res, "admin-audit.html"));
 app.get("/admin-analytics", (req, res) => servePage(res, "admin-analytics.html"));
 app.get("/admin-backup",    (req, res) => servePage(res, "admin-backup.html"));
@@ -841,6 +845,103 @@ app.post("/api/admin/sessions/resume/:sessionId", adminAuth.requireAdmin, async 
         res.json({ success: true, message: "Session resumed", sessionId });
     } catch (e) {
         console.error("sessions/resume:", e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ============================================
+//   ADMIN — SESSION TAKEOVER
+// ============================================
+app.get("/api/admin/takeover/sessions", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        const list = [];
+        for (const [id, s] of global.sessions) {
+            list.push({
+                sessionId: id,
+                phone: s.conn?.user?.id?.split(":")[0] || "pending",
+                connected: !!s.conn?.user,
+                ready: !!s.socketReady,
+                paused: s._paused === true
+            });
+        }
+        res.json({ success: true, sessions: list, total: list.length });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/admin/takeover/send", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        const { sessionId, to, text } = req.body || {};
+        if (!sessionId) return res.status(400).json({ error: "sessionId required" });
+        if (!to)        return res.status(400).json({ error: "to required" });
+        if (!text || !String(text).trim()) return res.status(400).json({ error: "text required" });
+
+        const live = global.sessions.get(sessionId);
+        if (!live?.conn?.user) return res.status(400).json({ error: "Session not connected" });
+
+        const jid = toJid(to);
+        if (!jid) return res.status(400).json({ error: "Invalid recipient" });
+
+        const sent = await live.conn.sendMessage(jid, { text: String(text).trim() });
+
+        try {
+            await auditLog.log(req, "session_takeover_send", {
+                target: to,
+                targetType: "session",
+                details: { sessionId, preview: String(text).slice(0, 100) }
+            });
+        } catch {}
+
+        res.json({ success: true, messageId: sent?.key?.id || null });
+    } catch (e) {
+        console.error("takeover/send:", e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ============================================
+//   ADMIN — ANTI-ABUSE DASHBOARD
+// ============================================
+app.get("/api/admin/abuse", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        const now = Date.now();
+        const sevenDaysAgo = new Date(now - 7 * 86400000);
+
+        const banned = await Account.countDocuments({ isBanned: true });
+
+        const bans7d = await auditLog.AuditLog.countDocuments({
+            action: { $in: ["ban_account", "delete_account"] },
+            timestamp: { $gte: sevenDaysAgo }
+        });
+
+        const kills7d = await auditLog.AuditLog.countDocuments({
+            action: "kill_session",
+            timestamp: { $gte: sevenDaysAgo }
+        });
+
+        const pauses7d = await auditLog.AuditLog.countDocuments({
+            action: { $in: ["session_pause", "session_resume"] },
+            timestamp: { $gte: sevenDaysAgo }
+        });
+
+        const bans = await auditLog.AuditLog.find({
+            action: { $in: ["ban_account", "delete_account"] }
+        }).sort({ timestamp: -1 }).limit(15).lean();
+
+        const kills = await auditLog.AuditLog.find({
+            action: "kill_session"
+        }).sort({ timestamp: -1 }).limit(15).lean();
+
+        const pauses = await auditLog.AuditLog.find({
+            action: { $in: ["session_pause", "session_resume"] }
+        }).sort({ timestamp: -1 }).limit(15).lean();
+
+        res.json({
+            success: true,
+            stats: { banned, bans7d, kills7d, pauses7d },
+            bans, kills, pauses
+        });
+    } catch (e) {
+        console.error("abuse:", e.message);
         res.status(500).json({ error: e.message });
     }
 });
