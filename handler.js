@@ -1,6 +1,6 @@
 // ============================================================
 //   303-XMD — handler.js
-//   Auto-detects + analytics + AI auto-reply (DM + group, no limits)
+//   Auto-detects + analytics + AI auto-reply (DM + group)
 // ============================================================
 const fs = require('fs-extra');
 const path = require('path');
@@ -166,47 +166,6 @@ module.exports = async (conn, m, userId = "default") => {
             userId, isGroup, isChannel, isStatus, body, args, command, prefix, isCmd
         };
 
-        // ============================================================
-        //   LIVE FEED: INCOMING
-        // ============================================================
-        try {
-            if (!msg.key.fromMe && !isChannel && !isStatus) {
-                const liveFeed = require('./lib/liveFeed');
-                const senderPhone = sender.split('@')[0].replace(/\D/g, "");
-                const isGroupChat = isGroup;
-
-                let chatName = pushname || sender.split('@')[0];
-                if (isGroupChat) {
-                    try {
-                        const meta = await conn.groupMetadata(from);
-                        chatName = meta.subject || chatName;
-                    } catch {}
-                }
-
-                const botPhone = (conn.user?.id || "").split(":")[0]?.split("@")[0]?.replace(/\D/g, "") || null;
-
-                await liveFeed.push({
-                    sessionId: userId,
-                    type: "message",
-                    chatJid: from,
-                    chatName,
-                    isGroup: isGroupChat,
-                    senderJid: sender,
-                    senderName: pushname,
-                    senderPhone,
-                    recipientJid: conn.user?.id || null,
-                    recipientName: config.botName || "Bot",
-                    recipientPhone: botPhone,
-                    fromMe: false,
-                    text: body || `[${type}]`,
-                    mediaType: ["imageMessage","videoMessage","audioMessage","stickerMessage","documentMessage"].includes(type)
-                        ? type.replace("Message","").toLowerCase() : null,
-                    extra: { direction: "incoming", messageId: msg.key.id }
-                });
-            }
-        } catch (e) { console.error("liveFeed incoming:", e.message); }
-        // ============================================================
-
         // ================= RUN AUTO HOOKS =================
         for (const [, mod] of autoCache) {
             if (typeof mod.enabled === 'function' && !mod.enabled(config)) continue;
@@ -298,7 +257,7 @@ module.exports = async (conn, m, userId = "default") => {
             }
         }
 
-        // ================= AUTO SAVE USER (fallback) =================
+        // ================= AUTO SAVE USER =================
         if (config.autoSave && !isOwner && !isGroup) {
             try {
                 let user = await User.findOne({ jid: sender });
@@ -308,7 +267,7 @@ module.exports = async (conn, m, userId = "default") => {
             } catch {}
         }
 
-        // ================= COMMANDS (with analytics) =================
+        // ================= COMMANDS =================
         if (isCmd) {
             const handler = commandCache.get(command);
             if (handler && typeof handler.execute === 'function') {
@@ -343,24 +302,17 @@ module.exports = async (conn, m, userId = "default") => {
             }
         }
 
-        // ============================================================
-        //   AI AUTO-REPLY — DM + GROUP (chat like a human, no limits)
-        // ============================================================
+        // ================= AI AUTO-REPLY — DM + GROUP (no limits) =================
         else if (!isCmd && !isOwner && body && config.aiChatEnabled) {
-            // Skip if message is empty or a command prefix
             if (!body.trim()) return;
-
-            // Prevent double-processing
             if (humanChat.hasReplied(msg.key.id)) return;
 
             let prompt = body;
             let sendOpts = { quoted: msg };
 
             if (isGroup) {
-                // Remember what was said
                 humanChat.pushContext(from, pushname || sender.split("@")[0], body);
 
-                // Build prompt with full group context
                 const context = humanChat.getContext(from, 15);
                 if (context) {
                     prompt =
@@ -371,12 +323,10 @@ module.exports = async (conn, m, userId = "default") => {
                         `Don't repeat what others said, add to it or respond to it.`;
                 }
 
-                // 50/50 reply-to vs plain
                 sendOpts = Math.random() < 0.4 ? { quoted: msg } : {};
             }
 
             try {
-                // Tiny delay so it doesn't look instant-robotic
                 const delay = isGroup ? 800 + Math.floor(Math.random() * 700) : 300;
                 await new Promise(r => setTimeout(r, delay));
 
