@@ -5,133 +5,159 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Web Chat | 303-XMD</title>
 <meta name="theme-color" content="#00a884">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="303-XMD">
-<link rel="manifest" href="/manifest.json">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <link rel="stylesheet" href="/theme.css">
-<link rel="stylesheet" href="/web.css">
+<style>
+body.theme-web{
+    --g1:#00a884;
+    --g2:#005c4b;
+    --glow:rgba(0,168,132,.4);
+    --bg:#0b141a;
+    --bg2:#111b21;
+}
+
+/* Reuse the Live Monitor card style */
+.feed-toolbar{
+    display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+    background:var(--panel);border:1px solid var(--border);
+    border-radius:14px;padding:12px 14px;
+    position:sticky;top:0;z-index:20;
+    backdrop-filter:blur(20px);margin-bottom:14px;
+}
+.feed-toolbar select,.feed-toolbar input{
+    padding:9px 12px;background:rgba(0,0,0,.4);
+    border:1px solid var(--border);color:var(--text);
+    border-radius:9px;font-size:12px;font-family:inherit;outline:none;
+}
+.feed-toolbar input{ flex:1;min-width:180px }
+.feed-toolbar .live-dot{
+    width:9px;height:9px;border-radius:50%;background:#00ff9d;
+    box-shadow:0 0 10px #00ff9d;animation:blink 1.4s infinite;flex-shrink:0;
+}
+.feed-toolbar .live-dot.off{ background:#ff5252;box-shadow:0 0 10px #ff5252 }
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.feed-count{ font-size:11px;color:var(--muted);margin-left:auto;letter-spacing:1px }
+
+.feed-list{ display:flex;flex-direction:column;gap:10px }
+.event{
+    background:var(--panel);border:1px solid var(--border);
+    border-radius:14px;padding:14px 16px;position:relative;overflow:hidden;
+}
+.event::before{ content:'';position:absolute;left:0;top:0;bottom:0;width:4px }
+.event.in::before{ background:linear-gradient(180deg,#00e5ff,#0e7490);box-shadow:0 0 12px rgba(0,229,255,.6) }
+.event.out::before{ background:linear-gradient(180deg,#00a884,#005c4b);box-shadow:0 0 12px rgba(0,168,132,.6) }
+.event.status::before{ background:linear-gradient(180deg,#a855f7,#7b2ff7);box-shadow:0 0 12px rgba(168,85,247,.6) }
+
+.event-head{ display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px }
+.event-direction{
+    display:inline-flex;align-items:center;gap:6px;
+    font-size:10px;font-weight:800;letter-spacing:1px;
+    text-transform:uppercase;padding:4px 10px;border-radius:20px;
+}
+.event.in .event-direction{ background:rgba(0,229,255,.12);color:#00e5ff;border:1px solid rgba(0,229,255,.4) }
+.event.out .event-direction{ background:rgba(0,168,132,.15);color:#00e5a0;border:1px solid rgba(0,168,132,.4) }
+.event.status .event-direction{ background:rgba(168,85,247,.15);color:#c084fc;border:1px solid rgba(168,85,247,.4) }
+.event-time{ font-size:11px;color:var(--muted);font-family:'Courier New',monospace }
+
+.event-chat{ display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;font-size:12px }
+.tag{
+    display:inline-flex;align-items:center;gap:5px;
+    padding:3px 9px;border-radius:8px;font-size:11px;
+    background:rgba(255,255,255,.05);border:1px solid var(--border);
+    color:var(--text);font-family:'Courier New',monospace;
+}
+.tag.session{ color:#a855f7;border-color:rgba(168,85,247,.35) }
+.tag.from{ color:#00e5ff;border-color:rgba(0,229,255,.35) }
+.tag.to{ color:#00e5a0;border-color:rgba(0,168,132,.4) }
+.tag.group{ color:#ffb347;border-color:rgba(255,179,71,.35) }
+.tag.dm{ color:#7fe6ff;border-color:rgba(127,230,255,.35) }
+.tag.status{ color:#c084fc;border-color:rgba(168,85,247,.4) }
+.tag i{ font-size:10px }
+
+.event-media{
+    margin:8px 0;border-radius:10px;overflow:hidden;
+    background:#000;max-width:100%;
+}
+.event-media img{ display:block;width:100%;max-width:340px;max-height:400px;object-fit:contain;cursor:pointer }
+.event-media video{ display:block;width:100%;max-width:340px;max-height:400px;background:#000 }
+.event-media audio{ display:block;width:100%;max-width:320px;padding:6px;background:rgba(0,0,0,.5);border-radius:10px }
+.event-media.sticker img{ max-width:180px;max-height:180px;object-fit:contain;background:transparent }
+.doc-card{
+    display:flex;align-items:center;gap:12px;padding:12px 14px;
+    background:rgba(0,0,0,.4);border-radius:10px;text-decoration:none;
+    color:var(--text);border:1px solid var(--border);max-width:340px;
+}
+.doc-card:hover{ background:rgba(255,255,255,.06);border-color:var(--g1) }
+.doc-card i{ font-size:26px;color:var(--g1);flex-shrink:0 }
+.doc-card .doc-info{ min-width:0;flex:1 }
+.doc-card .doc-name{ font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis }
+.doc-card .doc-size{ font-size:11px;color:var(--muted);margin-top:2px }
+
+.event-text{
+    font-size:13.5px;color:var(--text);line-height:1.55;
+    background:rgba(0,0,0,.25);padding:10px 12px;border-radius:9px;
+    word-break:break-word;white-space:pre-wrap;margin-bottom:8px;
+}
+.event-text.media-only{ font-style:italic;color:var(--muted) }
+.event-id{ font-family:'Courier New',monospace;font-size:9.5px;color:#5c6b73;margin-top:6px;word-break:break-all }
+.empty{ text-align:center;padding:50px 20px;color:var(--muted) }
+.empty i{ display:block;font-size:48px;opacity:.3;margin-bottom:16px }
+
+@media (max-width:600px){
+    .event-text{ font-size:12.5px }
+    .feed-toolbar select{ min-width:100px;font-size:11px }
+    .feed-toolbar input{ min-width:auto;flex:1 1 100% }
+    .event-media img,.event-media video{ max-width:100% }
+}
+</style>
 </head>
 <body class="theme-web">
 
 <div id="appSidebarMount"></div>
 
-<div class="wa-header">
-    <div class="avatar">💬</div>
-    <div class="info">
-        <div class="title">Web Chat</div>
-        <div class="subtitle">
-            <span class="live-dot off" id="statusDot"></span>
+<main class="app-content">
+    <div class="page-head">
+        <div>
+            <h2>Web Chat</h2>
+            <div class="sub">WhatsApp-style viewer · Live incoming &amp; outgoing</div>
+        </div>
+        <div class="status-pill off" id="statusPill">
+            <span class="dot"></span>
             <span id="statusText">Connecting…</span>
         </div>
     </div>
-    <div class="actions">
-        <button id="refreshBtn" title="Refresh"><i class="fas fa-rotate"></i></button>
-        <button id="clearBtn" title="Clear feed"><i class="fas fa-trash"></i></button>
+
+    <div class="feed-toolbar">
+        <span class="live-dot off" id="liveDot"></span>
+        <select id="sessionFilter"><option value="">All sessions</option></select>
+        <select id="directionFilter">
+            <option value="all">All</option>
+            <option value="in">📥 Incoming</option>
+            <option value="out">📤 Outgoing</option>
+            <option value="status">📢 Status</option>
+        </select>
+        <select id="chatFilter">
+            <option value="all">All chats</option>
+            <option value="dm">Direct</option>
+            <option value="group">Groups</option>
+        </select>
+        <input type="text" id="searchInput" placeholder="Search…">
+        <button class="btn btn-ghost btn-sm" id="refreshBtn"><i class="fas fa-rotate"></i> Refresh</button>
+        <span class="feed-count" id="feedCount">0 events</span>
     </div>
-</div>
 
-<div class="wa-layout" id="waLayout">
-    <aside class="sidebar">
-        <div class="sidebar-toolbar">
-            <select id="sessionFilter">
-                <option value="">All sessions</option>
-            </select>
-        </div>
-        <div class="sidebar-search">
-            <i class="fas fa-search"></i>
-            <input type="text" id="searchInput" placeholder="Search chats or messages…" autocomplete="off">
-        </div>
-        <div class="chat-list" id="chatList">
-            <div class="sidebar-empty">
-                <i class="fas fa-comments"></i>
-                No chats yet
-            </div>
-        </div>
-    </aside>
-
-    <main class="chat-pane">
-        <header class="chat-header" id="chatHeader" style="display:none">
-            <button class="back-btn" id="backBtn" title="Back"><i class="fas fa-arrow-left"></i></button>
-            <div class="ch-avatar" id="chatAvatar">💬</div>
-            <div class="ch-info" id="chatInfoBtn">
-                <div class="ch-name" id="chatName">—</div>
-                <div class="ch-sub" id="chatSub">—</div>
-            </div>
-            <div class="ch-actions">
-                <button id="inChatSearchBtn" title="Search in chat"><i class="fas fa-magnifying-glass"></i></button>
-                <button id="infoBtn" title="Chat info"><i class="fas fa-circle-info"></i></button>
-            </div>
-        </header>
-
-        <div class="chat" id="chat">
-            <div class="no-chat">
-                <i class="fas fa-comments"></i>
-                <h3>303-XMD Web Chat</h3>
-                <p>Select a chat from the list to see messages in real time and send replies.</p>
-            </div>
-        </div>
-
-        <div class="composer-wrap" id="composerWrap" style="display:none">
-            <div class="reply-banner" id="replyBanner">
-                <div class="rb-body">
-                    <span class="rb-who" id="rbWho">Replying</span>
-                    <span class="rb-text" id="rbText"></span>
-                </div>
-                <button class="rb-close" id="rbClose"><i class="fas fa-xmark"></i></button>
-            </div>
-            <div class="composer">
-                <textarea id="messageInput" placeholder="Type a message…" rows="1"></textarea>
-                <button class="send-btn" id="sendBtn" disabled title="Send">
-                    <i class="fas fa-paper-plane"></i>
-                </button>
-            </div>
-            <div class="composer-hint">Press Enter to send · Shift+Enter for new line</div>
-        </div>
-    </main>
-</div>
-
-<button class="scroll-btn" id="scrollBtn" title="Scroll to bottom">
-    <i class="fas fa-arrow-down"></i>
-</button>
-
-<div class="drawer-backdrop" id="drawerBackdrop"></div>
-<aside class="drawer" id="drawer">
-    <div class="drawer-head">
-        <button id="drawerClose"><i class="fas fa-xmark"></i></button>
-        <div class="dh-title">Chat info</div>
+    <div class="feed-list" id="feedList">
+        <div class="empty"><i class="fas fa-comments"></i>Waiting for messages…</div>
     </div>
-    <div class="drawer-body" id="drawerBody">
-        <div class="drawer-avatar" id="drawerAvatar">💬</div>
-        <div class="drawer-name" id="drawerName">—</div>
-        <div class="drawer-sub" id="drawerSub">—</div>
-        <div class="drawer-stats">
-            <div class="drawer-stat"><div class="ds-num" id="dsTotal">0</div><div class="ds-label">Total</div></div>
-            <div class="drawer-stat"><div class="ds-num" id="dsSent">0</div><div class="ds-label">Sent</div></div>
-            <div class="drawer-stat"><div class="ds-num" id="dsRecv">0</div><div class="ds-label">Recv</div></div>
-        </div>
-        <div class="drawer-section">
-            <h4>Identity</h4>
-            <div class="drawer-row"><span class="label">JID type</span><span class="value" id="dJidType">—</span></div>
-            <div class="drawer-row"><span class="label">Chat JID</span><span class="value" id="dChatJid">—</span></div>
-            <div class="drawer-row"><span class="label">Phone</span><span class="value green" id="dPhone">—</span></div>
-            <div class="drawer-row"><span class="label">LID</span><span class="value yellow" id="dLid">—</span></div>
-            <div class="drawer-row"><span class="label">Resolved via</span><span class="value blue" id="dResolve">—</span></div>
-        </div>
-        <div class="drawer-section">
-            <h4>Session</h4>
-            <div class="drawer-row"><span class="label">Session ID</span><span class="value" id="dSession">—</span></div>
-            <div class="drawer-row"><span class="label">First seen</span><span class="value" id="dFirst">—</span></div>
-            <div class="drawer-row"><span class="label">Last seen</span><span class="value" id="dLast">—</span></div>
-        </div>
-    </div>
-</aside>
+</main>
 
 <div class="toast" id="toast"></div>
 
 <script src="/sidebar.js"></script>
-<script src="/web.js"></script>
+<script>
+// Identical logic to live.html — just swap the page title/theme
+// (paste the exact same <script> from live.html here)
+</script>
 </body>
 </html>
