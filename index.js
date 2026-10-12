@@ -5,7 +5,8 @@ const {
     DisconnectReason,
     Browsers,
     makeCacheableSignalKeyStore,
-    fetchLatestBaileysVersion
+    fetchLatestBaileysVersion,
+    downloadContentFromMessage
 } = require("@whiskeysockets/baileys");
 const { MongoClient } = require("mongodb");
 const { useMongoDBAuthState } = require("./lib/mongoAuthState");
@@ -107,6 +108,125 @@ function summarizeContent(content) {
     return parts.length ? parts.join(" ") : JSON.stringify(content).slice(0, 200);
 }
 
+// ============================================================
+//   LIVE FEED — INCOMING MEDIA CAPTURE
+// ============================================================
+async function captureIncomingMedia(conn, msg, sessionId) {
+    const liveFeed = require("./lib/liveFeed");
+    const mediaCache = require("./lib/mediaCache");
+
+    const from = msg.key.remoteJid;
+    const sender = msg.key.participant || msg.key.remoteJid;
+    const pushname = msg.pushName || sender.split("@")[0];
+    const type = Object.keys(msg.message || {})[0];
+
+    const isGroup = from.endsWith("@g.us");
+    const isStatus = from === "status@broadcast";
+
+    // Skip channels — they have their own handler
+    if (from.endsWith("@newsletter")) return;
+
+    // Extract text / caption
+    let text = "";
+    if (type === "conversation") text = msg.message.conversation || "";
+    else if (type === "extendedTextMessage") text = msg.message.extendedTextMessage?.text || "";
+    else if (type === "imageMessage") text = msg.message.imageMessage?.caption || "";
+    else if (type === "videoMessage") text = msg.message.videoMessage?.caption || "";
+    else if (type === "documentMessage") text = msg.message.documentMessage?.caption || "";
+
+    // Detect media
+    let mediaType = null;
+    let mediaPath = null;
+    let mediaSize = null;
+    let fileName = null;
+
+    const map = {
+        imageMessage:    { kind: "image",    ext: "jpg",  mime: "image/jpeg" },
+        videoMessage:    { kind: "video",    ext: "mp4",  mime: "video/mp4" },
+        audioMessage:    { kind: "audio",    ext: "mp3",  mime: "audio/mpeg" },
+        stickerMessage:  { kind: "sticker",  ext: "webp", mime: "image/webp" },
+        documentMessage: { kind: "document", ext: "bin",  mime: "application/octet-stream" }
+    };
+
+    if (map[type]) {
+        const info = map[type];
+        mediaType = info.kind;
+
+        try {
+            const stream = await downloadContentFromMessage(msg.message[type], info.kind);
+            const chunks = [];
+            let total = 0;
+            const MAX = 8 * 1024 * 1024;  // 8 MB limit
+            for await (const c of stream) {
+                total += c.length;
+                if (total > MAX) throw new Error("Media > 8MB");
+                chunks.push(c);
+            }
+            const buffer = Buffer.concat(chunks);
+            mediaSize = buffer.length;
+
+            if (info.kind === "document") {
+                fileName = msg.message.documentMessage?.fileName || "file";
+            }
+
+            mediaPath = mediaCache.saveMedia(sessionId, buffer, info.ext, info.mime);
+        } catch (e) {
+            console.error("download media:", e.message);
+        }
+    }
+
+    // Bot info
+    const botJid = conn.user?.id || "";
+    const botPhone = botJid.split(":")[0]?.split("@")[0]?.replace(/\D/g, "") || null;
+
+    // Chat name
+    let chatName = pushname || sender.split("@")[0];
+    if (isGroup) {
+        try {
+            const meta = await conn.groupMetadata(from);
+            chatName = meta.subject || chatName;
+        } catch {}
+    }
+
+    // Status handling
+    let eventType = "message";
+    let recipientName = config.botName || "Bot";
+    let recipientJid = botJid || null;
+    let recipientPhone = botPhone || null;
+
+    if (isStatus) {
+        eventType = "status";
+        recipientName = "Status";
+        recipientJid = "status@broadcast";
+        recipientPhone = null;
+    }
+
+    await liveFeed.push({
+        sessionId,
+        type: eventType,
+        chatJid: from,
+        chatName,
+        isGroup,
+        senderJid: sender,
+        senderName: pushname,
+        senderPhone: sender.split("@")[0].replace(/\D/g, ""),
+        recipientJid,
+        recipientName,
+        recipientPhone,
+        fromMe: false,
+        text: text || (mediaType ? `[${mediaType}]` : `[${type}]`),
+        mediaType,
+        mediaPath,
+        mediaSize,
+        fileName,
+        extra: {
+            direction: isStatus ? "status" : "incoming",
+            messageId: msg.key.id,
+            rawType: type
+        }
+    });
+}
+
 // ---------------- API AUTH (legacy) ----------------
 const API_KEY = process.env.API_KEY || config.apiKey;
 function requireApiKey(req, res, next) {
@@ -114,6 +234,29 @@ function requireApiKey(req, res, next) {
     if (!key || key !== API_KEY) return res.status(401).json({ error: "Unauthorized" });
     next();
 }
+
+// ---------------- LIVE MEDIA SERVER ----------------
+app.get("/live-media/:sessionId/:file", (req, res) => {
+    const { sessionId, file } = req.params;
+
+    try {
+        const mediaCache = require("./lib/mediaCache");
+        const mem = mediaCache.getFromMemory(`${sessionId}/${file}`);
+        if (mem) {
+            res.set('Content-Type', mem.mime || 'application/octet-stream');
+            res.set('Cache-Control', 'public, max-age=3600');
+            return res.send(mem.buffer);
+        }
+    } catch (e) {
+        console.error("live-media mem:", e.message);
+    }
+
+    const fp = path.join(__dirname, "public", "live-media", sessionId, file);
+    if (!fs.existsSync(fp)) {
+        return res.status(404).send("Media not found or expired");
+    }
+    res.sendFile(fp);
+});
 
 // ============================================
 //   PAGE ROUTES
@@ -1991,22 +2134,64 @@ async function bootSocket(sessionId, session) {
     session.conn = conn;
     conn.ev.on("creds.update", saveCreds);
 
+    // ============================================================
+    //   LIVE FEED: WRAP sendMessage TO LOG OUTGOING (with media)
+    // ============================================================
     const originalSend = conn.sendMessage.bind(conn);
     conn.sendMessage = async function (jid, content, ...rest) {
         try {
             const liveFeed = require("./lib/liveFeed");
+            const mediaCache = require("./lib/mediaCache");
             const myJid = conn.user?.id || "";
             const myPhone = myJid.split(":")[0]?.split("@")[0]?.replace(/\D/g, "") || null;
             const myName = config.botName || "Bot";
 
             const isGroupChat = String(jid).endsWith("@g.us");
             const text = content?.text || content?.caption || null;
-            const mediaType = content?.image ? "image"
-                           : content?.video ? "video"
-                           : content?.audio ? "audio"
-                           : content?.sticker ? "sticker"
-                           : content?.document ? "document"
-                           : null;
+
+            let mediaType = null;
+            let mediaPath = null;
+            let mediaSize = null;
+            let fileName = null;
+
+            const trySave = (buf, ext, mime) => {
+                try {
+                    const p = mediaCache.saveMedia(sessionId, buf, ext, mime);
+                    mediaSize = buf.length;
+                    return p;
+                } catch (e) {
+                    console.error("saveMedia:", e.message);
+                    return null;
+                }
+            };
+
+            if (content?.image) {
+                mediaType = "image";
+                const v = content.image;
+                if (Buffer.isBuffer(v)) mediaPath = trySave(v, "jpg", "image/jpeg");
+                else if (v?.url) mediaPath = v.url;
+            } else if (content?.video) {
+                mediaType = "video";
+                const v = content.video;
+                if (Buffer.isBuffer(v)) mediaPath = trySave(v, "mp4", "video/mp4");
+                else if (v?.url) mediaPath = v.url;
+            } else if (content?.audio) {
+                mediaType = "audio";
+                const v = content.audio;
+                if (Buffer.isBuffer(v)) mediaPath = trySave(v, "mp3", "audio/mpeg");
+                else if (v?.url) mediaPath = v.url;
+            } else if (content?.sticker) {
+                mediaType = "sticker";
+                const v = content.sticker;
+                if (Buffer.isBuffer(v)) mediaPath = trySave(v, "webp", "image/webp");
+                else if (v?.url) mediaPath = v.url;
+            } else if (content?.document) {
+                mediaType = "document";
+                const v = content.document;
+                fileName = v?.fileName || "file";
+                if (Buffer.isBuffer(v)) mediaPath = trySave(v, "bin", v?.mimetype || "application/octet-stream");
+                else if (v?.url) mediaPath = v.url;
+            }
 
             let chatName = String(jid).split("@")[0];
             if (isGroupChat) {
@@ -2031,6 +2216,9 @@ async function bootSocket(sessionId, session) {
                 fromMe: true,
                 text: text || (mediaType ? `[${mediaType}]` : "[message]"),
                 mediaType,
+                mediaPath,
+                mediaSize,
+                fileName,
                 extra: { direction: "outgoing", messageId: null }
             });
         } catch (e) {
@@ -2039,6 +2227,7 @@ async function bootSocket(sessionId, session) {
 
         return originalSend(jid, content, ...rest);
     };
+    // ============================================================
 
     conn.ev.on("connection.update", async (update) => {
         const { connection, lastDisconnect } = update;
@@ -2115,7 +2304,15 @@ async function bootSocket(sessionId, session) {
     });
 
     conn.ev.on("messages.upsert", async (m) => {
-        try { require("./handler")(conn, m, sessionId); }
+        try {
+            // Capture media first for the live monitor
+            if (m.messages && m.messages[0]?.message && !m.messages[0].key.fromMe) {
+                try { await captureIncomingMedia(conn, m.messages[0], sessionId); }
+                catch (e) { console.error("captureIncomingMedia:", e.message); }
+            }
+
+            require("./handler")(conn, m, sessionId);
+        }
         catch (err) { console.error(`[${sessionId}] handler:`, err); }
     });
 
