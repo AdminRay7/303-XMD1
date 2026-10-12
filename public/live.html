@@ -16,191 +16,139 @@ body.theme-live{
     --bg:#0b0a0a;
     --bg2:#1a0505;
 }
-
-.feed-wrap{
-    display:flex;
-    flex-direction:column;
-    gap:12px;
-    margin-top:16px;
-}
-
 .feed-toolbar{
-    display:flex;
-    gap:8px;
-    flex-wrap:wrap;
-    align-items:center;
-    background:var(--panel);
-    border:1px solid var(--border);
-    border-radius:14px;
-    padding:12px 14px;
-    position:sticky;
-    top:0;
-    z-index:20;
-    backdrop-filter:blur(20px);
+    display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+    background:var(--panel);border:1px solid var(--border);
+    border-radius:14px;padding:12px 14px;
+    position:sticky;top:0;z-index:20;
+    backdrop-filter:blur(20px);margin-bottom:14px;
 }
-.feed-toolbar select,
-.feed-toolbar input{
-    padding:9px 12px;
-    background:rgba(0,0,0,.4);
-    border:1px solid var(--border);
-    color:var(--text);
-    border-radius:9px;
-    font-size:12px;
-    font-family:inherit;
-    outline:none;
+.feed-toolbar select,.feed-toolbar input{
+    padding:9px 12px;background:rgba(0,0,0,.4);
+    border:1px solid var(--border);color:var(--text);
+    border-radius:9px;font-size:12px;font-family:inherit;outline:none;
 }
-.feed-toolbar input{ flex:1; min-width:180px }
-.feed-toolbar select{ min-width:130px }
+.feed-toolbar input{ flex:1;min-width:180px }
 .feed-toolbar .live-dot{
-    width:9px;height:9px;border-radius:50%;
-    background:#00ff9d;
-    box-shadow:0 0 10px #00ff9d;
-    animation:blink 1.4s infinite;
-    flex-shrink:0;
+    width:9px;height:9px;border-radius:50%;background:#00ff9d;
+    box-shadow:0 0 10px #00ff9d;animation:blink 1.4s infinite;flex-shrink:0;
 }
-.feed-toolbar .live-dot.off{
-    background:#ff5252;
-    box-shadow:0 0 10px #ff5252;
-}
+.feed-toolbar .live-dot.off{ background:#ff5252;box-shadow:0 0 10px #ff5252 }
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.feed-count{ font-size:11px;color:var(--muted);margin-left:auto;letter-spacing:1px }
 
-.feed-count{
-    font-size:11px;
-    color:var(--muted);
-    margin-left:auto;
-    letter-spacing:1px;
-}
-
-.feed-list{
-    display:flex;
-    flex-direction:column;
-    gap:10px;
-}
+.feed-list{ display:flex;flex-direction:column;gap:10px }
 
 .event{
-    background:var(--panel);
-    border:1px solid var(--border);
-    border-radius:14px;
-    padding:14px 16px;
-    position:relative;
-    overflow:hidden;
-    transition:.2s;
+    background:var(--panel);border:1px solid var(--border);
+    border-radius:14px;padding:14px 16px;position:relative;
+    overflow:hidden;transition:.2s;
 }
 .event::before{
-    content:'';
-    position:absolute;
-    left:0; top:0; bottom:0;
-    width:4px;
+    content:'';position:absolute;left:0;top:0;bottom:0;width:4px;
 }
-.event.in::before{
-    background:linear-gradient(180deg,#00e5ff,#0e7490);
-    box-shadow:0 0 12px rgba(0,229,255,.6);
-}
-.event.out::before{
-    background:linear-gradient(180deg,#00ff9d,#00a86b);
-    box-shadow:0 0 12px rgba(0,255,157,.6);
-}
+.event.in::before{ background:linear-gradient(180deg,#00e5ff,#0e7490);box-shadow:0 0 12px rgba(0,229,255,.6) }
+.event.out::before{ background:linear-gradient(180deg,#00ff9d,#00a86b);box-shadow:0 0 12px rgba(0,255,157,.6) }
+.event.status::before{ background:linear-gradient(180deg,#a855f7,#7b2ff7);box-shadow:0 0 12px rgba(168,85,247,.6) }
 
-.event-head{
-    display:flex;
-    justify-content:space-between;
-    gap:10px;
-    align-items:center;
-    flex-wrap:wrap;
-    margin-bottom:10px;
-}
-
+.event-head{ display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px }
 .event-direction{
-    display:inline-flex;
-    align-items:center;
-    gap:6px;
-    font-size:10px;
-    font-weight:800;
-    letter-spacing:1px;
-    text-transform:uppercase;
-    padding:4px 10px;
-    border-radius:20px;
+    display:inline-flex;align-items:center;gap:6px;
+    font-size:10px;font-weight:800;letter-spacing:1px;
+    text-transform:uppercase;padding:4px 10px;border-radius:20px;
 }
-.event.in .event-direction{
-    background:rgba(0,229,255,.12);
-    color:#00e5ff;
-    border:1px solid rgba(0,229,255,.4);
-}
-.event.out .event-direction{
-    background:rgba(0,255,157,.12);
-    color:#00ff9d;
-    border:1px solid rgba(0,255,157,.4);
-}
+.event.in .event-direction{ background:rgba(0,229,255,.12);color:#00e5ff;border:1px solid rgba(0,229,255,.4) }
+.event.out .event-direction{ background:rgba(0,255,157,.12);color:#00ff9d;border:1px solid rgba(0,255,157,.4) }
+.event.status .event-direction{ background:rgba(168,85,247,.15);color:#c084fc;border:1px solid rgba(168,85,247,.4) }
+.event-time{ font-size:11px;color:var(--muted);font-family:'Courier New',monospace }
 
-.event-time{
-    font-size:11px;
-    color:var(--muted);
-    font-family:'Courier New',monospace;
-}
-
-.event-chat{
-    display:flex;
-    flex-wrap:wrap;
-    gap:8px;
-    margin-bottom:10px;
-    font-size:12px;
-}
+.event-chat{ display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;font-size:12px }
 .tag{
-    display:inline-flex;
-    align-items:center;
-    gap:5px;
-    padding:3px 9px;
-    border-radius:8px;
-    font-size:11px;
-    background:rgba(255,255,255,.05);
-    border:1px solid var(--border);
-    color:var(--text);
-    font-family:'Courier New',monospace;
+    display:inline-flex;align-items:center;gap:5px;
+    padding:3px 9px;border-radius:8px;font-size:11px;
+    background:rgba(255,255,255,.05);border:1px solid var(--border);
+    color:var(--text);font-family:'Courier New',monospace;
 }
-.tag.session{ color:#a855f7; border-color:rgba(168,85,247,.35) }
-.tag.from{ color:#00e5ff; border-color:rgba(0,229,255,.35) }
-.tag.to{ color:#00ff9d; border-color:rgba(0,255,157,.35) }
-.tag.group{ color:#ffb347; border-color:rgba(255,179,71,.35) }
-.tag.dm{ color:#7fe6ff; border-color:rgba(127,230,255,.35) }
+.tag.session{ color:#a855f7;border-color:rgba(168,85,247,.35) }
+.tag.from{ color:#00e5ff;border-color:rgba(0,229,255,.35) }
+.tag.to{ color:#00ff9d;border-color:rgba(0,255,157,.35) }
+.tag.group{ color:#ffb347;border-color:rgba(255,179,71,.35) }
+.tag.dm{ color:#7fe6ff;border-color:rgba(127,230,255,.35) }
+.tag.status{ color:#c084fc;border-color:rgba(168,85,247,.4) }
 .tag i{ font-size:10px }
 
-.event-text{
-    font-size:13.5px;
-    color:var(--text);
-    line-height:1.55;
-    background:rgba(0,0,0,.25);
-    padding:10px 12px;
-    border-radius:9px;
-    word-break:break-word;
-    white-space:pre-wrap;
-    margin-bottom:8px;
+/* MEDIA RENDERING */
+.event-media{
+    margin:8px 0;
+    border-radius:10px;
+    overflow:hidden;
+    background:#000;
+    max-width:100%;
 }
-.event-text.media{ font-style:italic; color:var(--muted) }
+.event-media img{
+    display:block;
+    width:100%;
+    max-width:340px;
+    max-height:400px;
+    object-fit:contain;
+    cursor:pointer;
+}
+.event-media video{
+    display:block;
+    width:100%;
+    max-width:340px;
+    max-height:400px;
+    background:#000;
+}
+.event-media audio{
+    display:block;
+    width:100%;
+    max-width:320px;
+    padding:6px;
+    background:rgba(0,0,0,.5);
+    border-radius:10px;
+}
+.event-media.sticker img{
+    max-width:180px;
+    max-height:180px;
+    object-fit:contain;
+    background:transparent;
+}
+.doc-card{
+    display:flex;align-items:center;gap:12px;
+    padding:12px 14px;background:rgba(0,0,0,.4);
+    border-radius:10px;text-decoration:none;color:var(--text);
+    border:1px solid var(--border);
+    max-width:340px;
+}
+.doc-card:hover{ background:rgba(255,255,255,.06);border-color:var(--g1) }
+.doc-card i{ font-size:26px;color:var(--g1);flex-shrink:0 }
+.doc-card .doc-info{ min-width:0;flex:1 }
+.doc-card .doc-name{ font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis }
+.doc-card .doc-size{ font-size:11px;color:var(--muted);margin-top:2px }
+
+.event-text{
+    font-size:13.5px;color:var(--text);line-height:1.55;
+    background:rgba(0,0,0,.25);padding:10px 12px;border-radius:9px;
+    word-break:break-word;white-space:pre-wrap;margin-bottom:8px;
+}
+.event-text.media-only{ font-style:italic;color:var(--muted) }
 
 .event-id{
-    font-family:'Courier New',monospace;
-    font-size:9.5px;
-    color:#5c6b73;
-    margin-top:6px;
-    word-break:break-all;
+    font-family:'Courier New',monospace;font-size:9.5px;
+    color:#5c6b73;margin-top:6px;word-break:break-all;
 }
 
 .empty{
-    text-align:center;
-    padding:50px 20px;
-    color:var(--muted);
+    text-align:center;padding:50px 20px;color:var(--muted);
 }
-.empty i{
-    display:block;
-    font-size:48px;
-    opacity:.3;
-    margin-bottom:16px;
-}
+.empty i{ display:block;font-size:48px;opacity:.3;margin-bottom:16px }
 
 @media (max-width:600px){
     .event-text{ font-size:12.5px }
-    .feed-toolbar select{ min-width:100px; font-size:11px }
-    .feed-toolbar input{ min-width:auto; flex:1 1 100% }
+    .feed-toolbar select{ min-width:100px;font-size:11px }
+    .feed-toolbar input{ min-width:auto;flex:1 1 100% }
+    .event-media img,.event-media video{ max-width:100% }
 }
 </style>
 </head>
@@ -222,28 +170,21 @@ body.theme-live{
 
     <div class="feed-toolbar">
         <span class="live-dot off" id="liveDot"></span>
-
-        <select id="sessionFilter">
-            <option value="">All sessions</option>
-        </select>
-
+        <select id="sessionFilter"><option value="">All sessions</option></select>
         <select id="directionFilter">
             <option value="all">All directions</option>
             <option value="in">📥 Incoming</option>
             <option value="out">📤 Outgoing</option>
+            <option value="status">📢 Status</option>
         </select>
-
         <select id="chatFilter">
             <option value="all">All chats</option>
             <option value="dm">Direct messages</option>
             <option value="group">Groups</option>
         </select>
-
         <input type="text" id="searchInput" placeholder="Search name, number, message…">
-
         <button class="btn btn-ghost btn-sm" id="clearBtn"><i class="fas fa-trash"></i> Clear</button>
         <button class="btn btn-ghost btn-sm" id="refreshBtn"><i class="fas fa-rotate"></i> Refresh</button>
-
         <span class="feed-count" id="feedCount">0 events</span>
     </div>
 
@@ -259,28 +200,12 @@ body.theme-live{
 const ADMIN_EMAIL = 'ryanobanga243@gmail.com';
 const token = localStorage.getItem('token');
 const user = JSON.parse(localStorage.getItem('user') || '{}');
-
 if (!token) location.href = '/login';
 
-// Admin-only guard
 const email = (user.email || '').trim().toLowerCase();
 if (email !== ADMIN_EMAIL.toLowerCase()) {
-    document.body.innerHTML = `
-        <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;text-align:center;color:#fff;font-family:'Segoe UI',sans-serif;background:#0b0a0a">
-            <div>
-                <div style="font-size:48px;color:#ff5252;margin-bottom:16px"><i class="fas fa-satellite-dish"></i></div>
-                <h2 style="letter-spacing:4px;margin-bottom:12px;font-size:22px">ADMIN ONLY</h2>
-                <p style="color:#8696a0;font-size:13px;max-width:340px;margin:0 auto 24px;line-height:1.6">
-                    The Live Monitor is restricted to the administrator account.
-                </p>
-                <a href="/dashboard" style="display:inline-block;padding:12px 22px;border-radius:10px;
-                   background:linear-gradient(135deg,#00d4ff,#7b2ff7);color:#000;font-weight:700;
-                   text-decoration:none;letter-spacing:2px;font-size:12px">
-                    <i class="fas fa-arrow-left"></i> BACK TO DASHBOARD
-                </a>
-            </div>
-        </div>`;
-    throw new Error('Admin only');
+    document.body.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#fff;font-family:sans-serif"><h2>ACCESS DENIED</h2></div>`;
+    throw new Error('Not admin');
 }
 
 const feedList = document.getElementById('feedList');
@@ -292,8 +217,6 @@ const directionFilter = document.getElementById('directionFilter');
 const chatFilter = document.getElementById('chatFilter');
 const searchInput = document.getElementById('searchInput');
 const feedCount = document.getElementById('feedCount');
-const clearBtn = document.getElementById('clearBtn');
-const refreshBtn = document.getElementById('refreshBtn');
 const toastEl = document.getElementById('toast');
 
 let allEvents = [];
@@ -305,21 +228,63 @@ function toast(msg, err = false) {
     toastEl.classList.add('show');
     setTimeout(() => toastEl.classList.remove('show'), 2200);
 }
-
 function escapeHtml(s) {
     return String(s || '').replace(/[&<>"']/g, c => ({
         '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
     }[c]));
 }
-
 function fmtTime(ts) {
     const d = new Date(ts);
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
-
 function fmtDay(ts) {
     const d = new Date(ts);
     return d.toLocaleDateString([], { day: '2-digit', month: 'short' });
+}
+function fmtSize(b) {
+    if (!b) return '';
+    if (b < 1024) return b + ' B';
+    if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+    return (b / 1024 / 1024).toFixed(2) + ' MB';
+}
+
+// Determine event class
+function eventClass(e) {
+    if (e.type === "status" || e.extra?.direction === "status") return "status";
+    return e.fromMe ? "out" : "in";
+}
+
+// Render media block
+function renderMedia(e) {
+    if (!e.mediaType) return '';
+    const src = e.mediaPath || '';
+    if (!src) return '';
+
+    const safe = escapeHtml(src);
+
+    switch (e.mediaType) {
+        case "image":
+            return `<div class="event-media"><img src="${safe}" loading="lazy" onclick="window.open(this.src,'_blank')" alt=""></div>`;
+        case "video":
+            return `<div class="event-media"><video src="${safe}" controls preload="metadata"></video></div>`;
+        case "audio":
+            return `<div class="event-media"><audio src="${safe}" controls preload="metadata"></audio></div>`;
+        case "sticker":
+            return `<div class="event-media sticker"><img src="${safe}" alt="" onclick="window.open(this.src,'_blank')"></div>`;
+        case "document":
+            return `
+                <div class="event-media">
+                    <a href="${safe}" target="_blank" rel="noopener" class="doc-card">
+                        <i class="fas fa-file"></i>
+                        <div class="doc-info">
+                            <div class="doc-name">${escapeHtml(e.fileName || 'document')}</div>
+                            <div class="doc-size">${fmtSize(e.mediaSize)}</div>
+                        </div>
+                    </a>
+                </div>`;
+        default:
+            return '';
+    }
 }
 
 function render() {
@@ -331,10 +296,11 @@ function render() {
     let events = allEvents.slice();
 
     if (sess) events = events.filter(e => e.sessionId === sess);
-    if (dir === 'in')  events = events.filter(e => e.fromMe === false);
-    if (dir === 'out') events = events.filter(e => e.fromMe === true);
-    if (chat === 'dm')    events = events.filter(e => !e.isGroup);
-    if (chat === 'group') events = events.filter(e => !!e.isGroup);
+    if (dir === 'in')     events = events.filter(e => e.fromMe === false && e.type !== 'status' && e.extra?.direction !== 'status');
+    if (dir === 'out')    events = events.filter(e => e.fromMe === true);
+    if (dir === 'status') events = events.filter(e => e.type === 'status' || e.extra?.direction === 'status');
+    if (chat === 'dm')    events = events.filter(e => !e.isGroup && e.type !== 'status');
+    if (chat === 'group') events = events.filter(e => e.isGroup);
     if (q) {
         events = events.filter(e =>
             (e.text || '').toLowerCase().includes(q) ||
@@ -348,7 +314,6 @@ function render() {
     }
 
     events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
     feedCount.textContent = `${events.length} event${events.length === 1 ? '' : 's'}`;
 
     if (!events.length) {
@@ -357,33 +322,44 @@ function render() {
     }
 
     feedList.innerHTML = events.slice(0, 300).map(e => {
-        const isIn = !e.fromMe;
-        const dirClass = isIn ? 'in' : 'out';
-        const dirIcon = isIn ? 'fa-arrow-down' : 'fa-arrow-up';
-        const dirLabel = isIn ? 'Incoming' : 'Outgoing';
+        const cls = eventClass(e);
+        const isStatus = cls === 'status';
+        const isIn = cls === 'in';
 
-        const senderLine = isIn
-            ? `<span class="tag from"><i class="fas fa-user"></i> ${escapeHtml(e.senderName || 'Unknown')}${e.senderPhone ? ' · +' + escapeHtml(e.senderPhone) : ''}</span>`
-            : `<span class="tag from"><i class="fas fa-robot"></i> ${escapeHtml(e.senderName || 'Bot')}${e.senderPhone ? ' · +' + escapeHtml(e.senderPhone) : ''}</span>`;
-
-        const recipLine = isIn
-            ? `<span class="tag to"><i class="fas fa-robot"></i> ${escapeHtml(e.recipientName || 'Bot')}${e.recipientPhone ? ' · +' + escapeHtml(e.recipientPhone) : ''}</span>`
-            : `<span class="tag to"><i class="fas fa-user"></i> ${escapeHtml(e.recipientName || e.chatName || 'Contact')}${e.recipientPhone && e.recipientPhone !== e.chatJid?.split('@')[0] ? ' · +' + escapeHtml(e.recipientPhone) : ''}</span>`;
-
-        const chatTag = e.isGroup
-            ? `<span class="tag group"><i class="fas fa-users"></i> ${escapeHtml(e.chatName || 'Group')}</span>`
-            : `<span class="tag dm"><i class="fas fa-comment"></i> DM</span>`;
+        const dirIcon = isStatus ? 'fa-tower-broadcast' : (isIn ? 'fa-arrow-down' : 'fa-arrow-up');
+        const dirLabel = isStatus ? 'Status' : (isIn ? 'Incoming' : 'Outgoing');
 
         const sessionTag = e.sessionId
             ? `<span class="tag session"><i class="fas fa-mobile-screen"></i> ${escapeHtml(e.sessionId.slice(0, 22))}…</span>`
             : '';
 
-        const mediaTag = e.mediaType
-            ? `<span class="tag"><i class="fas fa-photo-film"></i> ${escapeHtml(e.mediaType)}</span>`
+        const chatTag = isStatus
+            ? `<span class="tag status"><i class="fas fa-tower-broadcast"></i> Status</span>`
+            : (e.isGroup
+                ? `<span class="tag group"><i class="fas fa-users"></i> ${escapeHtml(e.chatName || 'Group')}</span>`
+                : `<span class="tag dm"><i class="fas fa-comment"></i> DM</span>`);
+
+        const senderLine = `<span class="tag from"><i class="fas fa-user"></i> ${escapeHtml(e.senderName || 'Unknown')}${e.senderPhone ? ' · +' + escapeHtml(e.senderPhone) : ''}</span>`;
+
+        const recipLine = isStatus
+            ? ''
+            : `<i class="fas fa-arrow-right" style="color:var(--muted);padding:4px 0;font-size:10px"></i>
+               <span class="tag to"><i class="fas ${isIn ? 'fa-robot' : 'fa-user'}"></i> ${escapeHtml(e.recipientName || 'Contact')}${e.recipientPhone ? ' · +' + escapeHtml(e.recipientPhone) : ''}</span>`;
+
+        const mediaHtml = renderMedia(e);
+
+        const text = e.text || '';
+        const showText = text && !/^\[(message|image|video|audio|sticker|document)\]$/.test(text);
+        const textHtml = showText
+            ? `<div class="event-text">${escapeHtml(text)}</div>`
+            : (e.mediaType ? '' : `<div class="event-text media-only">[${escapeHtml(e.extra?.rawType || 'empty')}]</div>`);
+
+        const idLine = e.extra?.messageId
+            ? `<div class="event-id">ID: ${escapeHtml(e.extra.messageId)}</div>`
             : '';
 
         return `
-            <div class="event ${dirClass}">
+            <div class="event ${cls}">
                 <div class="event-head">
                     <span class="event-direction"><i class="fas ${dirIcon}"></i> ${dirLabel}</span>
                     <span class="event-time">${fmtDay(e.timestamp)} · ${fmtTime(e.timestamp)}</span>
@@ -392,14 +368,11 @@ function render() {
                     ${sessionTag}
                     ${chatTag}
                     ${senderLine}
-                    <i class="fas fa-arrow-right" style="color:var(--muted);padding:4px 0;font-size:10px"></i>
                     ${recipLine}
-                    ${mediaTag}
                 </div>
-                <div class="event-text ${e.mediaType ? 'media' : ''}">
-                    ${escapeHtml(e.text || '[no text]')}
-                </div>
-                ${e.extra?.messageId ? `<div class="event-id">ID: ${escapeHtml(e.extra.messageId)}</div>` : ''}
+                ${mediaHtml}
+                ${textHtml}
+                ${idLine}
             </div>
         `;
     }).join('');
@@ -435,7 +408,6 @@ async function fetchFeed() {
         allEvents = incoming;
         updateSessionList(incoming);
         render();
-
         statusPill.classList.remove('off');
         statusText.textContent = 'Live';
         liveDot.classList.remove('off');
@@ -446,12 +418,10 @@ async function fetchFeed() {
     }
 }
 
-// ---------- SSE for instant updates ----------
 function connectSSE() {
     try {
         const url = `/api/live/stream?token=${encodeURIComponent(token)}`;
         const es = new EventSource(url);
-
         es.onmessage = (evt) => {
             try {
                 const data = JSON.parse(evt.data);
@@ -462,30 +432,24 @@ function connectSSE() {
                 render();
             } catch {}
         };
-
         es.onerror = () => {
             statusPill.classList.add('off');
             statusText.textContent = 'Reconnecting…';
         };
-
         es.onopen = () => {
             statusPill.classList.remove('off');
             statusText.textContent = 'Live';
         };
-    } catch (e) {
-        console.error('SSE failed:', e.message);
-    }
+    } catch (e) { console.error('SSE failed:', e.message); }
 }
 
-// ---------- Events ----------
 sessionFilter.onchange = render;
 directionFilter.onchange = render;
 chatFilter.onchange = render;
 searchInput.addEventListener('input', render);
 
-refreshBtn.onclick = () => { fetchFeed(); toast('Refreshed'); };
-
-clearBtn.onclick = async () => {
+document.getElementById('refreshBtn').onclick = () => { fetchFeed(); toast('Refreshed'); };
+document.getElementById('clearBtn').onclick = async () => {
     if (!confirm('Clear the entire live feed?')) return;
     try {
         const r = await fetch('/api/live/clear', {
@@ -496,12 +460,9 @@ clearBtn.onclick = async () => {
         allEvents = [];
         render();
         toast('Cleared');
-    } catch (e) {
-        toast(e.message, true);
-    }
+    } catch (e) { toast(e.message, true); }
 };
 
-// ---------- Boot ----------
 fetchFeed();
 connectSSE();
 setInterval(fetchFeed, 5000);
