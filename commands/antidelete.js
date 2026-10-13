@@ -1,13 +1,8 @@
 // commands/antidelete.js
-// Anti-delete with full media recovery (text, photo, video, audio, sticker, doc).
-//
-// Flow:
-//   1. handler.js caches EVERY incoming message in lib/messageStore.js
-//   2. When someone revokes a message, WhatsApp sends protocolMessage REVOKE
-//   3. handler calls our onMessage() (only if toggle ON for this group)
-//   4. We look up the original in messageStore and repost it
-//
+// Anti-delete — works in BOTH DMs and groups.
 // Toggle: .antidelete on | off | (no args = show state)
+// When you run .antidelete on, it enables recovery session-wide (DMs + all groups).
+// When you run .antidelete on inside a group, it also enables group-scope for that group.
 
 const autoToggles = require('../lib/autoToggles');
 const messageStore = require('../lib/messageStore');
@@ -31,19 +26,6 @@ async function isBotGroupAdmin(conn, groupJid) {
         });
         if (!me) return false;
         return me.admin === 'admin' || me.admin === 'superadmin';
-    } catch (e) {
-        return false;
-    }
-}
-
-async function isGroupAdmin(conn, groupJid, senderJid) {
-    try {
-        const meta = await conn.groupMetadata(groupJid);
-        const senderBare = bareNum(senderJid);
-        return meta.participants.some(p =>
-            bareNum(p.id) === senderBare &&
-            (p.admin === 'admin' || p.admin === 'superadmin')
-        );
     } catch { return false; }
 }
 
@@ -52,7 +34,7 @@ module.exports = {
     name: 'antidelete',
     category: 'auto',
     aliases: ['ad'],
-    description: 'Toggle anti-delete (recovers deleted messages incl. media)',
+    description: 'Toggle anti-delete for DMs + all groups in this session',
     toggleKey: 'antidelete',
     enabled: () => true,
 
@@ -62,19 +44,27 @@ module.exports = {
         if (!isOwner) {
             return conn.sendMessage(from, { text: fancy('❌ Owner only.') });
         }
-        if (!isGroup) {
-            return conn.sendMessage(from, { text: fancy('❌ Group only command.') });
-        }
-        if (!(await isBotGroupAdmin(conn, from))) {
-            return conn.sendMessage(from, { text: fancy('❌ I must be a group admin to use this.') });
+
+        // If inside a group, verify bot is admin so recovery can actually happen here too
+        if (isGroup) {
+            if (!(await isBotGroupAdmin(conn, from))) {
+                return conn.sendMessage(from, {
+                    text: fancy('❌ I must be a group admin to use this in a group.')
+                });
+            }
         }
 
         const action = (args[0] || '').toLowerCase();
 
+        // ---- show state (session-wide) ----
         if (action === '') {
-            const on = await autoToggles.get(userId, 'antidelete', from, config.antidelete === true);
+            const on = await autoToggles.get(userId, 'antidelete', null, config.antidelete === true);
             return conn.sendMessage(from, {
-                text: fancy(`🗑️ Anti-Delete in this group: ${on ? '✅ ON' : '❌ OFF'}`)
+                text: fancy(
+                    `🗑️ Anti-Delete (session-wide)\n\n` +
+                    `Status: ${on ? '✅ ON' : '❌ OFF'}\n` +
+                    `Applies to: DMs + all groups`
+                )
             }, { quoted: msg });
         }
 
@@ -85,42 +75,47 @@ module.exports = {
         }
 
         const value = action === 'on';
-        await autoToggles.set(userId, 'antidelete', from, value);
+
+        // Save at SESSION scope → applies to DMs (no groupJid) + every group in this session
+        await autoToggles.set(userId, 'antidelete', null, value);
+
         return conn.sendMessage(from, {
-            text: fancy(`✅ Anti-Delete ${value ? 'ENABLED' : 'DISABLED'} for this group.`)
+            text: fancy(`✅ Anti-Delete ${value ? 'ENABLED' : 'DISABLED'} (DMs + all groups).`)
         }, { quoted: msg });
     },
 
     // ============================================================
     //   ENFORCEMENT — fires on every message when toggle ON
+    //   Works in DMs and groups.
     // ============================================================
     async onMessage(conn, msg, ctx) {
         const { from, isGroup, userId } = ctx;
 
-        // group-only
-        if (!isGroup) return false;
-
-        // Is this a REVOKE?
+        // detect REVOKE
         const protocol = msg.message?.protocolMessage;
         if (!protocol) return false;
-        if (protocol.type !== 0) return false;         // 0 = REVOKE
+        if (protocol.type !== 0) return false;   // 0 = REVOKE
 
         const targetId = protocol.key?.id;
         if (!targetId) return false;
 
-        // Look up the original cached message
+        // Only recover messages from the SAME chat type the deleted message came from
+        // (No restrictions here — just look up the cached original)
         const cached = messageStore.get(targetId);
         if (!cached) {
-            console.log(`[antidelete] revoke detected but no cache for id=${targetId}`);
+            console.log(`[antidelete] revoke id=${targetId} but not in cache`);
             return false;
         }
 
         const senderJid = protocol.key?.participant || protocol.participant || cached.sender;
         const senderBare = bareNum(senderJid);
 
-        // Notify the group
+        // Where to post the recovery — same chat the delete happened in
+        const targetChat = from;
+
+        // Pre-warn
         try {
-            await conn.sendMessage(from, {
+            await conn.sendMessage(targetChat, {
                 text: fancy(`🗑️ *Anti-Delete*\n\n👤 @${senderBare} deleted a message. Recovering…`),
                 mentions: [senderJid]
             });
@@ -128,20 +123,17 @@ module.exports = {
             console.error('[antidelete] pre-warn failed:', e.message);
         }
 
-        // Recover the original
+        // Recover
         try {
-            const type = cached.type;
             const msgData = cached.message || {};
-
-            // ---------- TEXT ----------
             const textBody =
                 msgData.conversation ||
                 msgData.extendedTextMessage?.text ||
-                (msgData.imageMessage?.caption) ||
-                (msgData.videoMessage?.caption) ||
-                (msgData.documentMessage?.caption) || '';
+                msgData.imageMessage?.caption ||
+                msgData.videoMessage?.caption ||
+                msgData.documentMessage?.caption || '';
 
-            // ---------- MEDIA (buffer) ----------
+            // ---- MEDIA ----
             if (cached.mediaBuffer && cached.mediaKind) {
                 const buf = cached.mediaBuffer;
                 const mime = cached.mediaMime || 'application/octet-stream';
@@ -169,22 +161,22 @@ module.exports = {
                     default:
                         content = { text: caption };
                 }
-                await conn.sendMessage(from, content);
+                await conn.sendMessage(targetChat, content);
                 return true;
             }
 
-            // ---------- TEXT ONLY ----------
+            // ---- TEXT ----
             if (textBody) {
-                await conn.sendMessage(from, {
+                await conn.sendMessage(targetChat, {
                     text: fancy(`🗑️ *Anti-Delete*\n\n👤 @${senderBare} deleted:\n\n${textBody}`),
                     mentions: [senderJid]
                 });
                 return true;
             }
 
-            // ---------- NOTHING USEFUL ----------
-            await conn.sendMessage(from, {
-                text: fancy(`🗑️ @${senderBare} deleted a message but content is not recoverable.`),
+            // ---- FALLBACK ----
+            await conn.sendMessage(targetChat, {
+                text: fancy(`🗑️ @${senderBare} deleted a message but content isn't recoverable.`),
                 mentions: [senderJid]
             });
             return true;
