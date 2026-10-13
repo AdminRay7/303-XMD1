@@ -1,16 +1,5 @@
 // commands/add.js
-// Add members to a group.
-// Usage:
-//   .add 254712345678              → add by phone
-//   .add 254xxx 254yyy 254zzz      → add multiple
-//   .add @user                     → (works if user is in another group the bot shares)
-//   .addall 254xxx 254yyy ...      → bulk add up to 20
-//
-// Rules:
-//   - Only the owner OR a group admin can use
-//   - Bot must be group admin
-//   - Refuses numbers on the ban list
-//   - Checks number exists on WhatsApp before adding
+// Add members silently. Uses onWhatsApp to get the REAL JID (LID-safe).
 
 const { fancy } = require('../lib/font');
 const config = require('../config');
@@ -65,22 +54,6 @@ async function isBanned(sessionId, number) {
     } catch { return false; }
 }
 
-async function notifyOwner(conn, action, details) {
-    try {
-        if (!config.ownerNumber) return;
-        const ownerJid = config.ownerNumber.replace(/\D/g, '') + '@s.whatsapp.net';
-        const text =
-            `📋 *${action}*\n\n` +
-            `Group: ${details.group}\n` +
-            `By: ${details.by}\n` +
-            `Added: ${details.added.join(', ') || 'none'}\n` +
-            `Failed: ${details.failed.join(', ') || 'none'}`;
-        await conn.sendMessage(ownerJid, { text: fancy(text) });
-    } catch (e) {
-        console.error('[add] owner notify failed:', e.message);
-    }
-}
-
 module.exports = {
     name: 'add',
     category: 'admin',
@@ -88,19 +61,14 @@ module.exports = {
     description: 'Add members to a group (owner + admin only)',
     async execute(conn, msg, args, ctx) {
         const { from, sender, isGroup, isOwner, userId } = ctx;
-
-        if (!isGroup) return conn.sendMessage(from, { text: fancy('❌ Group only command.') });
+        if (!isGroup) return;
 
         const senderIsGroupAdmin = await isGroupAdmin(conn, from, sender);
-        if (!isOwner && !senderIsGroupAdmin) {
-            return conn.sendMessage(from, { text: fancy('❌ Only the owner or a group admin can use this.') });
-        }
+        if (!isOwner && !senderIsGroupAdmin) return;
 
-        if (!(await isBotGroupAdmin(conn, from))) {
-            return conn.sendMessage(from, { text: fancy('❌ I must be a group admin to add members.') });
-        }
+        if (!(await isBotGroupAdmin(conn, from))) return;
 
-        // Collect candidates from args + mentions
+        // Collect candidate numbers
         const candidates = new Set();
         const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
         for (const j of mentioned) {
@@ -112,70 +80,45 @@ module.exports = {
             if (d.length >= 10 && d.length <= 15) candidates.add(d);
         }
 
-        if (!candidates.size) {
-            return conn.sendMessage(from, {
-                text: fancy(
-                    `Usage:\n` +
-                    `${config.prefix}add 254712345678\n` +
-                    `${config.prefix}add 254xxx 254yyy\n` +
-                    `${config.prefix}add @user`
-                )
-            }, { quoted: msg });
-        }
+        if (!candidates.size) return;
 
-        const added = [];
-        const failed = [];
-        const banned = [];
+        // ============================================================
+        //   KEY FIX: use onWhatsApp() to resolve the CORRECT JID
+        //   (returns @lid JID when contact is LID-migrated)
+        // ============================================================
+        const jidsToAdd = [];
 
         for (const num of candidates) {
-            // Ban list check
             if (await isBanned(userId, num)) {
-                banned.push(num);
+                console.log(`[add] ${num} is banned, skipping`);
                 continue;
             }
 
-            const jid = num + '@s.whatsapp.net';
+            const pnJid = num + '@s.whatsapp.net';
 
-            // Check WhatsApp existence
             try {
-                const check = await conn.onWhatsApp(jid);
-                if (!check || !check.length || !check[0].exists) {
-                    failed.push(`${num} (not on WhatsApp)`);
+                // onWhatsApp returns the REAL JID WhatsApp expects
+                const check = await conn.onWhatsApp(pnJid);
+                if (!check || !check.length) {
+                    console.log(`[add] ${num} not on WhatsApp`);
                     continue;
                 }
+                const realJid = check[0].jid || check[0].lid || pnJid;
+                jidsToAdd.push(realJid);
             } catch (e) {
-                failed.push(`${num} (check failed)`);
-                continue;
+                console.error(`[add] onWhatsApp failed for ${num}:`, e.message);
             }
+        }
 
-            // Add
+        if (!jidsToAdd.length) return;
+
+        try {
+            await conn.groupParticipantsUpdate(from, jidsToAdd, 'add');
             try {
-                await conn.groupParticipantsUpdate(from, [jid], 'add');
-                added.push(num);
-            } catch (e) {
-                failed.push(`${num} (${e.message})`);
-            }
+                await conn.sendMessage(from, { react: { text: '➕', key: msg.key } });
+            } catch {}
+        } catch (e) {
+            console.error('[add] groupParticipantsUpdate failed:', e.message);
         }
-
-        const groupName = (await conn.groupMetadata(from).catch(() => ({}))).subject || from;
-
-        const report =
-            `➕ *ADD REPORT*\n\n` +
-            `✅ Added: ${added.length ? added.join(', ') : 'none'}\n` +
-            (failed.length ? `⚠️ Failed: ${failed.join(', ')}\n` : '') +
-            (banned.length ? `🚫 Banned: ${banned.join(', ')}` : '');
-
-        await conn.sendMessage(from, { text: fancy(report) }, { quoted: msg });
-
-        if (added.length) {
-            notifyOwner(conn, 'ADD', {
-                group: groupName,
-                by: bareNum(sender),
-                added,
-                failed
-            }).catch(() => {});
-        }
-
-        return true;
     }
 };
