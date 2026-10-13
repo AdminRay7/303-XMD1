@@ -1,6 +1,6 @@
 // ============================================================
 //   303-XMD — handler.js
-//   Auto-detects + analytics + AI (text + vision, conversational)
+//   Auto-detect modules (toggleable) + commands + AI (text + vision)
 // ============================================================
 const fs = require('fs-extra');
 const path = require('path');
@@ -15,11 +15,12 @@ const aiChat = require('./lib/aiChat');
 const aiVision = require('./lib/aiVision');
 const aiSettings = require('./lib/aiSettings');
 const humanChat = require('./lib/humanChat');
+const autoToggles = require('./lib/autoToggles');
 
 // ================= HOT-RELOAD COMMAND LOADER =================
 const COMMANDS_DIR = path.join(__dirname, 'commands');
-const commandCache = new Map();
-const autoCache = new Map();
+const commandCache = new Map();   // user commands (have execute)
+const autoCache = new Map();      // auto modules (have hooks)
 let folderSignature = '';
 let lastScan = 0;
 const RESCAN_DEBOUNCE_MS = 2000;
@@ -168,13 +169,19 @@ module.exports = async (conn, m, userId = "default") => {
             userId, isGroup, isChannel, isStatus, body, args, command, prefix, isCmd
         };
 
-        // ================= RUN AUTO HOOKS =================
+        // ============================================================
+        //   RUN AUTO-DETECTION MODULES (respecting runtime toggles)
+        // ============================================================
         for (const [, mod] of autoCache) {
+            // Skip if disabled via .auto command
+            if (mod.name && !autoToggles.isEnabled(mod.name)) continue;
+            // Skip if the module's own enabled() check returns false
             if (typeof mod.enabled === 'function' && !mod.enabled(config)) continue;
             if (typeof mod.onMessage !== 'function') continue;
+
             try {
                 const r = await mod.onMessage(conn, msg, cmdCtx);
-                if (r === true) return;
+                if (r === true) return;   // consumed → stop processing
             } catch (e) {
                 console.error(`auto/${mod.name}:`, e.message);
             }
@@ -305,10 +312,10 @@ module.exports = async (conn, m, userId = "default") => {
         }
 
         // ============================================================
-        //   AI — conversational (text + vision, both automatic)
+        //   AI — conversational (text + vision)
         // ============================================================
         else if (!isCmd && !isOwner) {
-            const aiOn = aiSettings.isEnabledCached();
+            const aiOn     = aiSettings.isEnabledCached();
             const groupsOn = aiSettings.isGroupsEnabledCached();
             if (!aiOn) return;
             if (isGroup && !groupsOn) return;
@@ -316,9 +323,7 @@ module.exports = async (conn, m, userId = "default") => {
             const sysPrompt = config.aiSystemPrompt
                 || "You are a normal person chatting on WhatsApp. Keep replies short, casual, human. Use emojis occasionally. Never mention you're an AI. Match the language the person uses. No markdown, no bullet points.";
 
-            // --------------------------------------------------------
-            //   PHOTO arrives → react + save for follow-ups
-            // --------------------------------------------------------
+            // ---------- PHOTO ----------
             if (type === "imageMessage") {
                 try {
                     const stream = await downloadContentFromMessage(msg.message.imageMessage, "image");
@@ -332,7 +337,6 @@ module.exports = async (conn, m, userId = "default") => {
                     }
                     const buffer = Buffer.concat(chunks);
 
-                    // Save for follow-ups BEFORE the AI call (so it's available immediately)
                     aiVision.setSessionImage(from, buffer, "image/jpeg");
 
                     if (config.autoTyping) {
@@ -354,9 +358,7 @@ module.exports = async (conn, m, userId = "default") => {
                 return;
             }
 
-            // --------------------------------------------------------
-            //   TEXT arrives → check stored photo, else normal AI chat
-            // --------------------------------------------------------
+            // ---------- TEXT ----------
             if (type === "conversation" || type === "extendedTextMessage") {
                 if (!body || !body.trim()) return;
                 if (humanChat.hasReplied(msg.key.id)) return;
@@ -373,7 +375,6 @@ module.exports = async (conn, m, userId = "default") => {
                 try {
                     let reply;
 
-                    // If a photo is still in memory → answer about it
                     if (stored && stored.buffer) {
                         reply = await aiVision.answerAboutPhoto(
                             stored.buffer,
@@ -381,11 +382,8 @@ module.exports = async (conn, m, userId = "default") => {
                             body,
                             sysPrompt
                         );
-                        // Refresh TTL so conversation can keep going
                         aiVision.setSessionImage(from, stored.buffer, stored.mime);
-                    }
-                    // Otherwise → normal text AI
-                    else {
+                    } else {
                         let prompt = body;
                         if (isGroup) {
                             humanChat.pushContext(from, pushname || sender.split("@")[0], body);
@@ -416,13 +414,15 @@ module.exports = async (conn, m, userId = "default") => {
 };
 
 // ============================================================
-//   GROUP / CALL EVENT HOOKS
+//   GROUP / CALL EVENT HOOKS (respect runtime toggles)
 // ============================================================
 module.exports.handleGroupUpdate = async (conn, update) => {
     try {
         const { id: groupJid, participants, action } = update;
         for (const [, mod] of autoCache) {
+            if (mod.name && !autoToggles.isEnabled(mod.name)) continue;
             if (typeof mod.enabled === 'function' && !mod.enabled(config)) continue;
+
             if (action === 'add' && typeof mod.onGroupJoin === 'function') {
                 await mod.onGroupJoin(conn, groupJid, participants);
             } else if (action === 'remove' && typeof mod.onGroupLeave === 'function') {
@@ -434,6 +434,7 @@ module.exports.handleGroupUpdate = async (conn, update) => {
 
 module.exports.handleCallEvent = async (conn, calls) => {
     for (const [, mod] of autoCache) {
+        if (mod.name && !autoToggles.isEnabled(mod.name)) continue;
         if (typeof mod.enabled === 'function' && !mod.enabled(config)) continue;
         if (typeof mod.onCall === 'function') {
             try { await mod.onCall(conn, calls); } catch (e) { console.error(`auto/${mod.name}:`, e.message); }
@@ -441,7 +442,7 @@ module.exports.handleCallEvent = async (conn, calls) => {
     }
 };
 
-// ================= EXPOSE FOR MENU =================
+// ================= EXPOSE FOR MENU / PLAYGROUND =================
 module.exports.getCommandCache = () => commandCache;
-module.exports.getAutoCache = () => autoCache;
-module.exports.reloadCommands = () => loadCommands(true);
+module.exports.getAutoCache    = () => autoCache;
+module.exports.reloadCommands  = () => loadCommands(true);
