@@ -16,24 +16,200 @@ body.theme-ai{
     --bg:#0a001a;
     --bg2:#14002e;
 }
-.chat-box{
+
+/* ---------- SWITCH CARD ---------- */
+.switch-card{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:22px 24px;
+    margin-bottom:16px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:16px;
+    flex-wrap:wrap;
+    position:relative;
+    overflow:hidden;
+}
+.switch-card::before{
+    content:'';
+    position:absolute;
+    top:0; left:0;
+    width:80px; height:3px;
+    background:linear-gradient(90deg,var(--g1),var(--g2));
+    box-shadow:0 0 20px var(--glow);
+}
+.switch-card .left{ flex:1; min-width:200px }
+.switch-card .title{
+    font-size:15px;
+    font-weight:800;
+    letter-spacing:1px;
+    color:#fff;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+}
+.switch-card .subtitle{
+    font-size:12px;
+    color:var(--muted);
+    margin-top:8px;
+    line-height:1.55;
+}
+.status-pill{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:4px 12px;
+    border-radius:20px;
+    font-size:10.5px;
+    font-weight:800;
+    letter-spacing:1px;
+    text-transform:uppercase;
+}
+.status-pill.on{
+    background:rgba(0,229,160,.15);
+    color:#00e5a0;
+    border:1px solid rgba(0,229,160,.4);
+}
+.status-pill.off{
+    background:rgba(255,82,82,.15);
+    color:#ff9999;
+    border:1px solid rgba(255,82,82,.4);
+}
+.status-pill.loading{
+    background:rgba(255,255,255,.05);
+    color:var(--muted);
+    border:1px solid var(--border);
+}
+.status-pill .dot{
+    width:6px; height:6px;
+    border-radius:50%;
+    background:currentColor;
+    box-shadow:0 0 6px currentColor;
+    animation:blink 1.4s infinite;
+}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+
+/* ---------- BIG SWITCH ---------- */
+.big-switch{
+    width:80px;
+    height:42px;
+    border-radius:24px;
+    background:rgba(255,255,255,.08);
+    border:2px solid var(--border);
+    position:relative;
+    cursor:pointer;
+    transition:.3s;
+    flex-shrink:0;
+    user-select:none;
+}
+.big-switch::before{
+    content:'';
+    position:absolute;
+    width:30px; height:30px;
+    border-radius:50%;
+    background:#666;
+    top:4px; left:4px;
+    transition:.3s;
+}
+.big-switch.on{
+    background:linear-gradient(135deg,var(--g1),var(--g2));
+    border-color:transparent;
+    box-shadow:0 0 30px var(--glow);
+}
+.big-switch.on::before{
+    background:#fff;
+    left:42px;
+    box-shadow:0 0 15px rgba(255,255,255,.6);
+}
+.big-switch.busy{
+    opacity:.6;
+    cursor:wait;
+    pointer-events:none;
+}
+
+/* ---------- META GRID ---------- */
+.meta-row{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+    gap:10px;
+    margin-top:16px;
+}
+.meta-item{
+    background:rgba(255,255,255,.03);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:10px 12px;
+    font-size:11px;
+}
+.meta-item .lbl{
+    color:var(--muted);
+    letter-spacing:1.5px;
+    text-transform:uppercase;
+    font-size:9.5px;
+    font-weight:700;
+}
+.meta-item .val{
+    color:var(--text);
+    font-weight:700;
+    margin-top:5px;
+    font-family:'Courier New',monospace;
+    word-break:break-all;
+    font-size:12px;
+}
+
+/* ---------- TEST CHAT ---------- */
+.chat-card{
     background:var(--panel);
     border:1px solid var(--border);
     border-radius:16px;
     padding:20px;
-    height:520px;
-    display:flex;
-    flex-direction:column;
+    position:relative;
+    overflow:hidden;
 }
-.messages{
-    flex:1;
-    overflow-y:auto;
+.chat-card::before{
+    content:'';
+    position:absolute;
+    top:0; left:0;
+    width:80px; height:3px;
+    background:linear-gradient(90deg,var(--g1),var(--g2));
+    box-shadow:0 0 20px var(--glow);
+}
+.chat-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom:14px;
+    gap:10px;
+}
+.chat-head h3{
+    font-size:13px;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    color:var(--g1);
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin:0;
+}
+.chat-head h3 i{ font-size:15px }
+
+.chat-messages{
     display:flex;
     flex-direction:column;
     gap:10px;
-    padding-right:6px;
-    margin-bottom:14px;
+    min-height:220px;
+    max-height:420px;
+    overflow-y:auto;
+    padding:8px 4px;
+    margin-bottom:12px;
+    scrollbar-width:thin;
 }
+.chat-messages::-webkit-scrollbar{ width:5px }
+.chat-messages::-webkit-scrollbar-thumb{ background:rgba(168,85,247,.4); border-radius:3px }
+
 .msg{
     max-width:85%;
     padding:10px 14px;
@@ -47,8 +223,8 @@ body.theme-ai{
     align-self:flex-end;
     background:linear-gradient(135deg,var(--g1),var(--g2));
     color:#000;
-    border-bottom-right-radius:4px;
     font-weight:600;
+    border-bottom-right-radius:4px;
 }
 .msg.ai{
     align-self:flex-start;
@@ -56,16 +232,6 @@ body.theme-ai{
     border:1px solid var(--border);
     color:var(--text);
     border-bottom-left-radius:4px;
-}
-.msg.meta{
-    align-self:center;
-    background:rgba(0,0,0,.3);
-    color:var(--muted);
-    font-size:10.5px;
-    padding:5px 12px;
-    border-radius:20px;
-    letter-spacing:1px;
-    text-transform:uppercase;
 }
 .msg.thinking{
     align-self:flex-start;
@@ -80,11 +246,24 @@ body.theme-ai{
     border:1px solid rgba(255,82,82,.4);
     color:#ff9999;
 }
-.chat-input{
+.msg.meta-info{
+    align-self:center;
+    background:rgba(0,0,0,.35);
+    color:var(--muted);
+    font-size:10.5px;
+    padding:5px 14px;
+    border-radius:20px;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    font-weight:600;
+}
+
+.chat-input-row{
     display:flex;
     gap:8px;
+    align-items:flex-end;
 }
-.chat-input textarea{
+.chat-input-row textarea{
     flex:1;
     padding:12px 14px;
     background:rgba(0,0,0,.4);
@@ -97,19 +276,56 @@ body.theme-ai{
     resize:none;
     max-height:100px;
     min-height:44px;
+    line-height:1.5;
 }
-.chat-input textarea:focus{ border-color:var(--g1); box-shadow:0 0 20px var(--glow); }
-.send-btn{
+.chat-input-row textarea:focus{
+    border-color:var(--g1);
+    box-shadow:0 0 20px var(--glow);
+}
+.chat-input-row button{
     width:44px; height:44px;
     border-radius:12px;
     border:none;
     background:linear-gradient(135deg,var(--g1),var(--g2));
-    color:#000; font-size:15px;
-    cursor:pointer; flex-shrink:0;
+    color:#000;
+    font-size:15px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-shrink:0;
     box-shadow:0 4px 16px var(--glow);
+    transition:.2s;
 }
-.send-btn:hover{ filter:brightness(1.15); transform:scale(1.03); }
-.send-btn:disabled{ opacity:.5; cursor:not-allowed; }
+.chat-input-row button:hover:not(:disabled){
+    filter:brightness(1.15);
+    transform:scale(1.03);
+}
+.chat-input-row button:disabled{ opacity:.5; cursor:not-allowed }
+
+.chat-hint{
+    font-size:10.5px;
+    color:var(--muted);
+    margin-top:8px;
+    text-align:center;
+    letter-spacing:.5px;
+}
+
+/* ---------- DISABLED OVERLAY ---------- */
+.ai-disabled-banner{
+    display:none;
+    background:rgba(255,82,82,.08);
+    border:1px solid rgba(255,82,82,.35);
+    border-radius:12px;
+    padding:12px 14px;
+    color:#ff9999;
+    font-size:12px;
+    margin-bottom:14px;
+    align-items:center;
+    gap:10px;
+}
+.ai-disabled-banner.show{ display:flex }
+.ai-disabled-banner i{ font-size:16px }
 </style>
 </head>
 <body class="theme-ai">
@@ -120,20 +336,95 @@ body.theme-ai{
     <div class="page-head">
         <div>
             <h2>AI Control</h2>
-            <div class="sub">Test the AI chatbot · Clear session memory</div>
+            <div class="sub">Toggle AI · Test chatbot · Clear memory</div>
         </div>
-        <button class="btn btn-ghost btn-sm" id="clearBtn"><i class="fas fa-eraser"></i> Clear Memory</button>
+        <button class="btn btn-ghost btn-sm" id="refreshBtn">
+            <i class="fas fa-rotate"></i> Refresh
+        </button>
     </div>
 
-    <div class="chat-box">
-        <div class="messages" id="messages">
-            <div class="msg meta">AI provider: <span id="providerLabel">Groq · openai/gpt-oss-20b</span></div>
-            <div class="msg ai">Hi admin! Ask me anything to test the AI chatbot.</div>
+    <!-- ================= MASTER SWITCH ================= -->
+    <div class="switch-card">
+        <div class="left">
+            <div class="title">
+                <i class="fas fa-robot" style="color:var(--g1)"></i>
+                AI Master Switch
+                <span class="status-pill loading" id="masterPill">
+                    <span class="dot"></span>
+                    <span id="masterText">Loading…</span>
+                </span>
+            </div>
+            <div class="subtitle">
+                Turn the AI on/off for <b>all DMs and groups</b> at once.
+                When off, the bot stops replying with AI. Commands still work.
+            </div>
+            <div class="meta-row">
+                <div class="meta-item">
+                    <div class="lbl">Model</div>
+                    <div class="val" id="metaModel">—</div>
+                </div>
+                <div class="meta-item">
+                    <div class="lbl">Source</div>
+                    <div class="val" id="metaSource">—</div>
+                </div>
+                <div class="meta-item">
+                    <div class="lbl">Sessions</div>
+                    <div class="val" id="metaSessions">—</div>
+                </div>
+            </div>
         </div>
-        <div class="chat-input">
-            <textarea id="input" placeholder="Type a message…"></textarea>
-            <button class="send-btn" id="sendBtn"><i class="fas fa-paper-plane"></i></button>
+        <div class="big-switch" id="masterSwitch" title="Toggle AI"></div>
+    </div>
+
+    <!-- ================= GROUPS SWITCH ================= -->
+    <div class="switch-card">
+        <div class="left">
+            <div class="title">
+                <i class="fas fa-users" style="color:var(--g1)"></i>
+                Group Replies
+                <span class="status-pill loading" id="groupsPill">
+                    <span class="dot"></span>
+                    <span id="groupsText">Loading…</span>
+                </span>
+            </div>
+            <div class="subtitle">
+                Allow AI to reply in <b>group chats</b>. DMs are always controlled by the master switch above.
+            </div>
         </div>
+        <div class="big-switch" id="groupsSwitch" title="Toggle group replies"></div>
+    </div>
+
+    <!-- ================= TEST CHAT ================= -->
+    <div class="chat-card">
+        <div class="chat-head">
+            <h3><i class="fas fa-flask"></i> Test AI</h3>
+            <button class="btn btn-ghost btn-sm" id="clearBtn">
+                <i class="fas fa-eraser"></i> Clear Memory
+            </button>
+        </div>
+
+        <div class="ai-disabled-banner" id="disabledBanner">
+            <i class="fas fa-circle-exclamation"></i>
+            <span>AI is currently <b>OFF</b>. Turn on the master switch above to test.</span>
+        </div>
+
+        <div class="chat-messages" id="messages">
+            <div class="msg meta-info">
+                AI provider: <span id="providerLabel">Groq · openai/gpt-oss-20b</span>
+            </div>
+            <div class="msg ai">
+                Hi admin! Ask me anything to test the AI chatbot. This chat is browser-side only — it does not go through WhatsApp.
+            </div>
+        </div>
+
+        <div class="chat-input-row">
+            <textarea id="input" placeholder="Type a message…" rows="1"></textarea>
+            <button id="sendBtn" title="Send">
+                <i class="fas fa-paper-plane"></i>
+            </button>
+        </div>
+
+        <div class="chat-hint">Press Enter to send · Shift+Enter for new line</div>
     </div>
 </main>
 
@@ -142,39 +433,185 @@ body.theme-ai{
 <script src="/sidebar.js"></script>
 <script>
 // ============================================================
-//   DIRECT GROQ CALL — no server, no .env
+//   ADMIN GUARD
 // ============================================================
-const GROQ_API_KEY = "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";
-const GROQ_MODEL   = "openai/gpt-oss-20b";
-const GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions";
-
-const SYSTEM_PROMPT = "You are 303-XMD, a friendly WhatsApp assistant. Keep replies under 300 chars unless asked for detail.";
-
 const ADMIN_EMAIL = 'ryanobanga243@gmail.com';
 const token = localStorage.getItem('token');
 const user = JSON.parse(localStorage.getItem('user') || '{}');
+
 if (!token) location.href = '/login';
 
 const email = (user.email || '').trim().toLowerCase();
 if (email !== ADMIN_EMAIL.toLowerCase()) {
-    document.body.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;text-align:center"><div><h2>ACCESS DENIED</h2><p style="color:#888">Admin only</p></div></div>`;
-    throw new Error('Not admin');
+    document.body.innerHTML = `
+        <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;text-align:center;color:#fff;font-family:'Segoe UI',sans-serif;background:#0a001a">
+            <div>
+                <div style="font-size:48px;color:#ff5252;margin-bottom:16px"><i class="fas fa-robot"></i></div>
+                <h2 style="letter-spacing:4px;margin-bottom:12px;font-size:22px">ACCESS DENIED</h2>
+                <p style="color:#8696a0;font-size:13px;max-width:340px;margin:0 auto 24px;line-height:1.6">
+                    The AI Control panel is restricted to the administrator account.
+                </p>
+                <a href="/dashboard" style="display:inline-block;padding:12px 22px;border-radius:10px;background:linear-gradient(135deg,#a855f7,#6366f1);color:#000;font-weight:700;text-decoration:none;letter-spacing:2px;font-size:12px">
+                    <i class="fas fa-arrow-left"></i> BACK TO DASHBOARD
+                </a>
+            </div>
+        </div>`;
+    throw new Error('Admin only');
 }
 
-const messagesBox = document.getElementById('messages');
-const input = document.getElementById('input');
-const sendBtn = document.getElementById('sendBtn');
-const clearBtn = document.getElementById('clearBtn');
-const toastEl = document.getElementById('toast');
+// ============================================================
+//   DOM ELEMENTS
+// ============================================================
+const masterSwitch    = document.getElementById('masterSwitch');
+const groupsSwitch    = document.getElementById('groupsSwitch');
+const masterPill      = document.getElementById('masterPill');
+const masterText      = document.getElementById('masterText');
+const groupsPill      = document.getElementById('groupsPill');
+const groupsText      = document.getElementById('groupsText');
+const metaModel       = document.getElementById('metaModel');
+const metaSource      = document.getElementById('metaSource');
+const metaSessions    = document.getElementById('metaSessions');
+const providerLabel   = document.getElementById('providerLabel');
+const disabledBanner  = document.getElementById('disabledBanner');
+const messagesBox     = document.getElementById('messages');
+const input           = document.getElementById('input');
+const sendBtn         = document.getElementById('sendBtn');
+const clearBtn        = document.getElementById('clearBtn');
+const refreshBtn      = document.getElementById('refreshBtn');
+const toastEl         = document.getElementById('toast');
 
-const history = [];
+let currentEnabled = false;
+let currentGroups  = false;
+let busy           = false;
 
+// ============================================================
+//   TOAST
+// ============================================================
 function toast(msg, err = false) {
     toastEl.textContent = msg;
     toastEl.classList.toggle('err', err);
     toastEl.classList.add('show');
-    setTimeout(() => toastEl.classList.remove('show'), 2200);
+    setTimeout(() => toastEl.classList.remove('show'), 2400);
 }
+
+// ============================================================
+//   LOAD STATUS
+// ============================================================
+async function loadStatus() {
+    try {
+        const r = await fetch('/api/admin/ai/status', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed');
+
+        currentEnabled = !!d.enabled;
+        currentGroups  = !!d.groupsEnabled;
+
+        // Master switch
+        masterSwitch.classList.toggle('on', currentEnabled);
+        masterPill.className = 'status-pill ' + (currentEnabled ? 'on' : 'off');
+        masterText.textContent = currentEnabled ? 'AI ON' : 'AI OFF';
+
+        // Groups switch
+        groupsSwitch.classList.toggle('on', currentGroups);
+        groupsPill.className = 'status-pill ' + (currentGroups ? 'on' : 'off');
+        groupsText.textContent = currentGroups ? 'GROUPS ON' : 'GROUPS OFF';
+
+        // Meta info
+        metaModel.textContent   = d.config?.model || '—';
+        metaSource.textContent  = d.source?.enabled === 'db' ? 'Dashboard' : 'Config';
+        metaSessions.textContent = `${d.sessions?.active ?? 0}/${d.sessions?.total ?? 0}`;
+
+        providerLabel.textContent = `Groq · ${d.config?.model || 'openai/gpt-oss-20b'}`;
+
+        // Show/hide disabled banner + block input
+        disabledBanner.classList.toggle('show', !currentEnabled);
+        sendBtn.disabled = !currentEnabled;
+        input.disabled   = !currentEnabled;
+        input.placeholder = currentEnabled ? 'Type a message…' : 'AI is off — turn it on to test';
+    } catch (e) {
+        masterPill.className = 'status-pill off';
+        masterText.textContent = 'ERROR';
+        toast(e.message, true);
+    }
+}
+
+// ============================================================
+//   TOGGLE MASTER
+// ============================================================
+async function toggleMaster() {
+    if (busy) return;
+    busy = true;
+    masterSwitch.classList.add('busy');
+
+    const next = !currentEnabled;
+
+    try {
+        const r = await fetch('/api/admin/ai/toggle', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ enabled: next })
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed');
+
+        toast(d.message || `AI ${next ? 'ON' : 'OFF'}`);
+        await loadStatus();
+    } catch (e) {
+        toast(e.message, true);
+    }
+
+    busy = false;
+    masterSwitch.classList.remove('busy');
+}
+
+// ============================================================
+//   TOGGLE GROUPS
+// ============================================================
+async function toggleGroups() {
+    if (busy) return;
+    busy = true;
+    groupsSwitch.classList.add('busy');
+
+    const next = !currentGroups;
+
+    try {
+        const r = await fetch('/api/admin/ai/toggle-groups', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ enabled: next })
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed');
+
+        toast(d.message || `Group replies ${next ? 'ON' : 'OFF'}`);
+        await loadStatus();
+    } catch (e) {
+        toast(e.message, true);
+    }
+
+    busy = false;
+    groupsSwitch.classList.remove('busy');
+}
+
+// ============================================================
+//   CLICK HANDLERS
+// ============================================================
+masterSwitch.addEventListener('click', toggleMaster);
+groupsSwitch.addEventListener('click', toggleGroups);
+refreshBtn.addEventListener('click', () => { loadStatus(); toast('Refreshed'); });
+
+// ============================================================
+//   TEST CHAT
+// ============================================================
+const SESSION = 'admin_' + Date.now();
 
 function addMsg(text, cls = 'ai') {
     const div = document.createElement('div');
@@ -185,83 +622,84 @@ function addMsg(text, cls = 'ai') {
     return div;
 }
 
-async function askGroq(userMessage) {
-    const payload = {
-        model: GROQ_MODEL,
-        messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            ...history,
-            { role: "user", content: userMessage }
-        ],
-        temperature: 0.7,
-        max_tokens: 1024
-    };
-
-    const r = await fetch(GROQ_URL, {
-        method: "POST",
-        headers: {
-            "Authorization": "Bearer " + GROQ_API_KEY,
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify(payload)
-    });
-
-    const data = await r.json();
-
-    if (!r.ok) {
-        const errMsg = data?.error?.message || `HTTP ${r.status}`;
-        throw new Error(errMsg);
-    }
-
-    const choice = data?.choices?.[0]?.message;
-    let reply = (choice?.content || "").trim();
-    if (!reply && choice?.reasoning) reply = choice.reasoning.trim();
-    if (!reply) throw new Error("Empty reply from Groq");
-
-    history.push({ role: "user", content: userMessage });
-    history.push({ role: "assistant", content: reply });
-    if (history.length > 20) history.splice(0, history.length - 20);
-
-    return reply;
-}
-
 async function send() {
     const text = input.value.trim();
     if (!text) return;
+    if (!currentEnabled) {
+        toast('AI is off — turn it on first', true);
+        return;
+    }
 
     addMsg(text, 'user');
     input.value = '';
+    input.style.height = 'auto';
     sendBtn.disabled = true;
     const thinking = addMsg('Thinking…', 'thinking');
 
     try {
-        const reply = await askGroq(text);
+        const r = await fetch('/api/admin/ai/chat', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ sessionId: SESSION, message: text })
+        });
+        const d = await r.json();
         thinking.remove();
-        addMsg(reply, 'ai');
+        if (!r.ok) throw new Error(d.error || 'Failed');
+        if (!d.reply) throw new Error('No reply from AI');
+        addMsg(d.reply, 'ai');
     } catch (e) {
         thinking.remove();
         addMsg('❌ ' + e.message, 'error');
     }
 
-    sendBtn.disabled = false;
+    sendBtn.disabled = !currentEnabled;
     input.focus();
 }
 
-sendBtn.onclick = send;
-input.addEventListener('keydown', e => {
+sendBtn.addEventListener('click', send);
+
+input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         send();
     }
 });
 
-clearBtn.onclick = () => {
-    history.length = 0;
-    messagesBox.innerHTML = `<div class="msg meta">Memory cleared</div>`;
-    addMsg('Memory cleared. Fresh conversation started.', 'ai');
-    toast('Memory cleared');
-};
+input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 100) + 'px';
+});
 
+// ============================================================
+//   CLEAR MEMORY
+// ============================================================
+clearBtn.addEventListener('click', async () => {
+    try {
+        const r = await fetch('/api/admin/ai/clear/' + encodeURIComponent(SESSION), {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Failed');
+
+        messagesBox.innerHTML = `
+            <div class="msg meta-info">Memory cleared</div>
+            <div class="msg ai">Fresh conversation started. Ask me anything!</div>
+        `;
+        toast('Memory cleared');
+    } catch (e) {
+        toast(e.message, true);
+    }
+});
+
+// ============================================================
+//   BOOT
+// ============================================================
+loadStatus();
+setInterval(loadStatus, 8000);   // keep status in sync
 input.focus();
 </script>
 </body>
