@@ -1,3 +1,0 @@
-const { fancy } = require('../lib/font');
-module.exports = { name:'palindrome', category:'misc', aliases:['pal'], description:'Check if text is a palindrome',
-async execute(conn,msg,args,ctx){ const {from}=ctx; const t=args.join(' ').trim(); if(!t) return conn.sendMessage(from,{text:fancy('❌ Usage: .palindrome racecar')},{quoted:msg}); const clean=t.toLowerCase().replace(/[^a-z0-9]/g,''); const rev=clean.split('').reverse().join(''); const ok=clean===rev; await conn.sendMessage(from,{text:`╭─〔 🔄 ᴘᴀʟɪɴᴅʀᴏᴍᴇ 〕\n│\n│ 📝 ${t}\n│ 🎯 ${ok?'✅ Yes':'❌ No'}\n│\n╰──────────────────────`},{quoted:msg}); } };
