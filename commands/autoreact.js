@@ -6,36 +6,20 @@ module.exports = {
     name: 'autoreact',
     category: 'auto',
     aliases: [],
-    description: 'Toggle autoreact',
+    description: 'Toggle auto-react',
+    toggleKey: 'autoreact',
+    enabled: () => true,
     async execute(conn, msg, args, ctx) {
-        const { from, isGroup, isOwner } = ctx;
+        const { from, isGroup, isOwner, userId } = ctx;
         if (!isOwner) return conn.sendMessage(from, { text: fancy('❌ Owner only.') });
-        falseif (!isGroup) return conn.sendMessage(from, { text: fancy('❌ Group only command.') });
-        false
-        if (isGroup) {
-            try {
-                const meta = await conn.groupMetadata(from);
-                const botJid = conn.user?.id?.split(':')[0] + '@s.whatsapp.net';
-                const me = meta.participants.find(p => p.id === botJid || p.id === conn.user?.id);
-                if (!me || (me.admin !== 'admin' && me.admin !== 'superadmin')) {
-                    return conn.sendMessage(from, { text: fancy('❌ I must be a group admin to toggle this.') });
-                }
-            } catch (e) {
-                return conn.sendMessage(from, { text: fancy('❌ Cannot read group info.') });
-            }
-        }
-        
         const action = (args[0] || '').toLowerCase();
-        if (!['on', 'off', ''].includes(action)) {
-            return conn.sendMessage(from, { text: fancy(`Usage: ${config.prefix}autoreact on|off`) });
-        }
         const scope = isGroup ? from : null;
         if (action === '') {
-            const current = await autoToggles.get(ctx.userId, 'autoreact', scope, config.autoReact === true);
-            return conn.sendMessage(from, { text: fancy(`💫 autoreact: ${current ? '✅ ON' : '❌ OFF'}`) });
+            const on = await autoToggles.get(userId, 'autoreact', scope, config.autoReact === true);
+            return conn.sendMessage(from, { text: fancy(`💫 Auto-React: ${on ? '✅ ON' : '❌ OFF'}`) });
         }
-        const value = action === 'on';
-        await autoToggles.set(ctx.userId, 'autoreact', scope, value);
-        return conn.sendMessage(from, { text: fancy(`✅ autoreact ${value ? 'ENABLED' : 'DISABLED'}.`) });
+        if (!['on', 'off'].includes(action)) return conn.sendMessage(from, { text: fancy(`Usage: ${config.prefix}autoreact on|off`) });
+        await autoToggles.set(userId, 'autoreact', scope, action === 'on');
+        return conn.sendMessage(from, { text: fancy(`✅ Auto-React ${action === 'on' ? 'ENABLED' : 'DISABLED'}.`) });
     }
 };
