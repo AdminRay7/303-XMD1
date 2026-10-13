@@ -1,6 +1,5 @@
 // ============================================================
 //   303-XMD — handler.js
-//   Auto-detect modules (toggleable) + commands + AI (text + vision)
 // ============================================================
 const fs = require('fs-extra');
 const path = require('path');
@@ -14,12 +13,12 @@ const analytics = require('./lib/analytics');
 const aiChat = require('./lib/aiChat');
 const aiVision = require('./lib/aiVision');
 
-// Safe imports — never crash the handler if a lib is missing
+// Safe imports
 let aiSettings;
 try { aiSettings = require('./lib/aiSettings'); } catch (_) {
     aiSettings = {
         isEnabledCached: () => config.aiChatEnabled !== false,
-        isGroupsEnabledCached: () => config.aiChatGroups !== false,
+        isGroupsEnabledCached: () => config.aiGroups !== false,
         getStatus: async () => ({ enabled: true, groupsEnabled: true, source: 'config' }),
         setAiEnabled: async () => {},
         setAiGroupsEnabled: async () => {},
@@ -30,11 +29,8 @@ try { aiSettings = require('./lib/aiSettings'); } catch (_) {
 let humanChat;
 try { humanChat = require('./lib/humanChat'); } catch (_) {
     humanChat = {
-        pushContext: () => {},
-        getContext: () => '',
-        clearContext: () => {},
-        hasReplied: () => false,
-        humanize: (t) => t
+        pushContext: () => {}, getContext: () => '', clearContext: () => {},
+        hasReplied: () => false, humanize: (t) => t
     };
 }
 
@@ -45,8 +41,8 @@ try { autoToggles = require('./lib/autoToggles'); } catch (_) {
 
 // ================= HOT-RELOAD COMMAND LOADER =================
 const COMMANDS_DIR = path.join(__dirname, 'commands');
-const commandCache = new Map();
-const autoCache = new Map();
+const commandCache = new Map();   // user commands → execute(conn,msg,args,ctx)
+const autoCache = new Map();      // enforcement hooks → onMessage/onCall/onGroupJoin/onGroupLeave
 let folderSignature = '';
 let lastScan = 0;
 const RESCAN_DEBOUNCE_MS = 2000;
@@ -70,7 +66,6 @@ function loadCommands(force = false) {
     const now = Date.now();
     if (!force && now - lastScan < RESCAN_DEBOUNCE_MS) return false;
     lastScan = now;
-
     if (!fs.existsSync(COMMANDS_DIR)) return false;
 
     const sig = computeFolderSignature(COMMANDS_DIR);
@@ -84,35 +79,40 @@ function loadCommands(force = false) {
         for (const item of fs.readdirSync(dir)) {
             const itemPath = path.join(dir, item);
             const stat = fs.statSync(itemPath);
-            if (stat.isDirectory()) walk(itemPath);
-            else if (item.endsWith('.js')) {
-                try {
-                    delete require.cache[require.resolve(itemPath)];
-                    const mod = require(itemPath);
-                    if (!mod) continue;
+            if (stat.isDirectory()) { walk(itemPath); continue; }
+            if (!item.endsWith('.js')) continue;
 
-                    const hasExecute = typeof mod.execute === 'function';
-                    const hasHook = typeof mod.onMessage === 'function' ||
-                                    typeof mod.onCall === 'function' ||
-                                    typeof mod.onGroupJoin === 'function' ||
-                                    typeof mod.onGroupLeave === 'function';
+            try {
+                delete require.cache[require.resolve(itemPath)];
+                const mod = require(itemPath);
+                if (!mod) continue;
 
-                    if (hasExecute) {
-                        const names = [mod.name, ...(Array.isArray(mod.aliases) ? mod.aliases : [])]
-                            .filter(Boolean).map(s => String(s).toLowerCase());
-                        for (const n of names) commandCache.set(n, mod);
-                    }
-                    if (hasHook) {
-                        autoCache.set(mod.name || itemPath, mod);
-                    }
-                } catch (e) {
-                    console.error(`⚠️ Load ${itemPath}:`, e.message);
+                const hasExecute = typeof mod.execute === 'function';
+                const hasHook = typeof mod.onMessage === 'function' ||
+                                typeof mod.onCall === 'function' ||
+                                typeof mod.onGroupJoin === 'function' ||
+                                typeof mod.onGroupLeave === 'function';
+
+                // Command registration
+                if (hasExecute) {
+                    const names = [mod.name, ...(Array.isArray(mod.aliases) ? mod.aliases : [])]
+                        .filter(Boolean).map(s => String(s).toLowerCase());
+                    for (const n of names) commandCache.set(n, mod);
                 }
+
+                // Enforcement hook registration
+                // (Patch B) — loosened: register any module with a toggleKey + any hook
+                if (hasHook && mod.toggleKey) {
+                    autoCache.set(mod.name || itemPath, mod);
+                }
+            } catch (e) {
+                console.error(`⚠️ Load ${itemPath}:`, e.message);
             }
         }
     };
     walk(COMMANDS_DIR);
-    console.log(fancy(`♻️  Loaded ${commandCache.size} command(s) · ${autoCache.size} auto module(s).`));
+
+    console.log(fancy(`♻️ Loaded ${commandCache.size} command(s) · ${autoCache.size} auto module(s).`));
     return true;
 }
 loadCommands(true);
@@ -186,14 +186,11 @@ module.exports = async (conn, m, userId = "default") => {
         const command   = isCmd ? body.slice(prefix.length).trim().split(' ')[0].toLowerCase() : '';
         const args      = body ? body.trim().split(/ +/).slice(1) : [];
 
-        // ============================================================
-        //   OWNER DETECTION
-        //   Matches: OWNER_NUMBER, session's own linked number, fromMe
-        // ============================================================
-        const senderBare    = String(sender).split('@')[0].split(':')[0].replace(/\D/g, '');
-        const sessionJid    = conn.user?.id || '';
-        const sessionBare   = sessionJid.split('@')[0].split(':')[0].replace(/\D/g, '');
-        const ownerCfgBare  = String(config.ownerNumber || '').replace(/\D/g, '');
+        // Owner detection
+        const senderBare   = String(sender).split('@')[0].split(':')[0].replace(/\D/g, '');
+        const sessionJid   = conn.user?.id || '';
+        const sessionBare  = sessionJid.split('@')[0].split(':')[0].replace(/\D/g, '');
+        const ownerCfgBare = String(config.ownerNumber || '').replace(/\D/g, '');
 
         const isOwner =
             msg.key.fromMe === true ||
@@ -202,7 +199,6 @@ module.exports = async (conn, m, userId = "default") => {
 
         try { loadCommands(false); } catch {}
 
-        // ================= CONTEXT =================
         const cmdCtx = {
             from, sender, fancy, isOwner, pushname, config, conn, msg,
             userId, isGroup, isChannel, isStatus, body, args, command, prefix, isCmd,
@@ -210,19 +206,92 @@ module.exports = async (conn, m, userId = "default") => {
         };
 
         // ============================================================
-        //   RUN AUTO-DETECTION MODULES — SAFE (async toggle check)
+        //   CACHE EVERY INCOMING MESSAGE (for antidelete media recovery)
+        //   (Patch A)
+        // ============================================================
+        if (!msg.key.fromMe && !isStatus && !isChannel) {
+            try {
+                let mediaBuffer = null;
+                let mediaMime = null;
+                let mediaKind = null;
+                let fileName = null;
+                let ptt = false;
+
+                const mediaTypes = {
+                    imageMessage:    { kind: 'image',    mime: msg.message.imageMessage?.mimetype },
+                    videoMessage:    { kind: 'video',    mime: msg.message.videoMessage?.mimetype },
+                    audioMessage:    { kind: 'audio',    mime: msg.message.audioMessage?.mimetype },
+                    stickerMessage:  { kind: 'sticker',  mime: 'image/webp' },
+                    documentMessage: { kind: 'document', mime: msg.message.documentMessage?.mimetype }
+                };
+
+                if (mediaTypes[type]) {
+                    const info = mediaTypes[type];
+                    mediaKind = info.kind;
+                    mediaMime = info.mime || 'application/octet-stream';
+
+                    if (type === 'audioMessage') {
+                        ptt = msg.message.audioMessage?.ptt === true;
+                    }
+                    if (type === 'documentMessage') {
+                        fileName = msg.message.documentMessage?.fileName || 'file';
+                    }
+
+                    try {
+                        const stream = await downloadContentFromMessage(msg.message[type], mediaKind);
+                        const chunks = [];
+                        let total = 0;
+                        const MAX = 20 * 1024 * 1024;   // 20MB max cached
+                        for await (const c of stream) {
+                            total += c.length;
+                            if (total > MAX) throw new Error('Media > 20MB, not cached');
+                            chunks.push(c);
+                        }
+                        mediaBuffer = Buffer.concat(chunks);
+                    } catch (e) {
+                        console.error('[cache] media download failed:', e.message);
+                    }
+                }
+
+                messageStore.save(msg.key.id, {
+                    key: msg.key,
+                    message: msg.message,
+                    type,
+                    body,
+                    sender,
+                    pushname,
+                    from,
+                    isGroup,
+                    userId,
+                    mediaBuffer,
+                    mediaMime,
+                    mediaKind,
+                    fileName,
+                    ptt,
+                    timestamp: Date.now()
+                });
+            } catch (e) {
+                console.error('[cache] save failed:', e.message);
+            }
+        }
+
+        // ============================================================
+        //   AUTO ENFORCEMENT LAYER
+        //   Only runs modules with toggleKey + onMessage
         // ============================================================
         for (const [, mod] of autoCache) {
-            if (typeof mod.enabled === 'function' && !mod.enabled(config)) continue;
+            // Only run onMessage-having modules in this loop
             if (typeof mod.onMessage !== 'function') continue;
 
-            // Async toggle check — only if the module declares a toggle key
-            if (mod.toggleKey) {
-                try {
-                    const on = await autoToggles.get(userId, mod.toggleKey, isGroup ? from : null, false);
-                    if (!on) continue;
-                } catch (_) { /* fall through */ }
+            // Runtime toggle check (async)
+            let on = false;
+            try {
+                on = await autoToggles.get(userId, mod.toggleKey, isGroup ? from : null, false);
+            } catch (e) {
+                console.error(`[auto] toggle check failed for ${mod.name}:`, e.message);
+                continue;
             }
+            if (!on) continue;
 
             try {
                 const r = await mod.onMessage(conn, msg, cmdCtx);
@@ -289,16 +358,10 @@ module.exports = async (conn, m, userId = "default") => {
             return;
         }
 
-        // ================= BUTTON ROUTER =================
         if (await routeButtonInteraction(conn, msg, cmdCtx)) return;
-
-        // ================= STATUS =================
         if (isStatus) return;
-
-        // ================= WORK MODE =================
         if (config.workMode === 'private' && !isOwner) return;
 
-        // ================= CHANNEL SUBSCRIBE PROMPT =================
         if (!isOwner && !isGroup && config.channelLink) {
             const subbed = await isSubscribed(sender);
             if (!subbed) {
@@ -311,7 +374,6 @@ module.exports = async (conn, m, userId = "default") => {
             }
         }
 
-        // ================= AUTO SAVE USER =================
         if (config.autoSave && !isOwner && !isGroup) {
             try {
                 let user = await User.findOne({ jid: sender });
@@ -328,7 +390,6 @@ module.exports = async (conn, m, userId = "default") => {
                 const t0 = Date.now();
                 let success = true;
                 let errorMsg = null;
-
                 try {
                     await Promise.race([
                         handler.execute(conn, msg, args, cmdCtx),
@@ -340,24 +401,17 @@ module.exports = async (conn, m, userId = "default") => {
                     console.error(`Cmd "${command}":`, e.message);
                     await conn.sendMessage(from, { text: fancy(`❌ Error: ${e.message}`) });
                 }
-
                 try {
                     await analytics.recordCommand({
-                        sessionId: userId,
-                        accountId: null,
-                        command,
-                        sender,
-                        isGroup,
-                        success,
-                        errorMsg,
-                        durationMs: Date.now() - t0
+                        sessionId: userId, accountId: null, command, sender, isGroup,
+                        success, errorMsg, durationMs: Date.now() - t0
                     });
                 } catch {}
             }
         }
 
         // ============================================================
-        //   AI — conversational (text + vision)
+        //   AI
         // ============================================================
         else if (!isCmd && !isOwner) {
             const aiOn     = aiSettings.isEnabledCached();
@@ -380,36 +434,24 @@ module.exports = async (conn, m, userId = "default") => {
                         chunks.push(c);
                     }
                     const buffer = Buffer.concat(chunks);
-
                     aiVision.setSessionImage(from, buffer, "image/jpeg");
-
-                    if (config.autoTyping) {
-                        try { await conn.sendPresenceUpdate('composing', from); } catch {}
-                    }
+                    if (config.autoTyping) { try { await conn.sendPresenceUpdate('composing', from); } catch {} }
                     const delay = isGroup ? 900 + Math.floor(Math.random() * 800) : 500;
                     await new Promise(r => setTimeout(r, delay));
-
                     const caption = (msg.message.imageMessage?.caption || "").trim();
                     const reply = await aiVision.describePhoto(buffer, "image/jpeg", caption, sysPrompt);
                     if (reply) await conn.sendMessage(from, { text: reply }, { quoted: msg });
-                } catch (e) {
-                    console.error("[vision] photo error:", e.message);
-                }
+                } catch (e) { console.error("[vision] photo error:", e.message); }
                 return;
             }
 
             if (type === "conversation" || type === "extendedTextMessage") {
                 if (!body || !body.trim()) return;
                 if (humanChat.hasReplied(msg.key.id)) return;
-
                 const stored = aiVision.getSessionImage(from);
-
-                if (config.autoTyping) {
-                    try { await conn.sendPresenceUpdate('composing', from); } catch {}
-                }
+                if (config.autoTyping) { try { await conn.sendPresenceUpdate('composing', from); } catch {} }
                 const delay = isGroup ? 800 + Math.floor(Math.random() * 700) : 300;
                 await new Promise(r => setTimeout(r, delay));
-
                 try {
                     let reply;
                     if (stored && stored.buffer) {
@@ -426,15 +468,12 @@ module.exports = async (conn, m, userId = "default") => {
                         }
                         reply = await aiChat.askAI(prompt, userId, sysPrompt);
                     }
-
                     if (reply) {
                         if (isGroup) reply = humanChat.humanize(reply);
                         const opts = isGroup && Math.random() < 0.4 ? { quoted: msg } : {};
                         await conn.sendMessage(from, { text: reply }, opts);
                     }
-                } catch (e) {
-                    console.error("aiChat reply error:", e.message);
-                }
+                } catch (e) { console.error("aiChat reply error:", e.message); }
             }
         }
 
@@ -450,15 +489,11 @@ module.exports.handleGroupUpdate = async (conn, update) => {
     try {
         const { id: groupJid, participants, action } = update;
         for (const [, mod] of autoCache) {
-            if (typeof mod.enabled === 'function' && !mod.enabled(config)) continue;
-
-            if (mod.toggleKey) {
-                try {
-                    const on = await autoToggles.get("default", mod.toggleKey, groupJid, false);
-                    if (!on) continue;
-                } catch (_) {}
-            }
-
+            if (!mod.toggleKey) continue;
+            try {
+                const on = await autoToggles.get("default", mod.toggleKey, groupJid, false);
+                if (!on) continue;
+            } catch { continue; }
             if (action === 'add' && typeof mod.onGroupJoin === 'function') {
                 await mod.onGroupJoin(conn, groupJid, participants);
             } else if (action === 'remove' && typeof mod.onGroupLeave === 'function') {
@@ -470,7 +505,7 @@ module.exports.handleGroupUpdate = async (conn, update) => {
 
 module.exports.handleCallEvent = async (conn, calls) => {
     for (const [, mod] of autoCache) {
-        if (typeof mod.enabled === 'function' && !mod.enabled(config)) continue;
+        if (!mod.toggleKey) continue;
         if (typeof mod.onCall === 'function') {
             try { await mod.onCall(conn, calls); } catch (e) { console.error(`auto/${mod.name}:`, e.message); }
         }
