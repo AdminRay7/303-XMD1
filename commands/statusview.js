@@ -1,3 +1,8 @@
+// commands/statusview.js
+// Auto-view incoming WhatsApp statuses.
+// Toggle: .statusview on | off | (no args = show state)
+// Scope: session-wide.
+
 const autoToggles = require('../lib/autoToggles');
 const { fancy } = require('../lib/font');
 const config = require('../config');
@@ -5,20 +10,45 @@ const config = require('../config');
 module.exports = {
     name: 'statusview',
     category: 'auto',
-    aliases: ['autoview'],
-    description: 'Toggle auto-view of statuses',
+    aliases: ['autoview', 'sv'],
+    description: 'Auto-view WhatsApp statuses',
     toggleKey: 'statusview',
     enabled: () => true,
+
     async execute(conn, msg, args, ctx) {
         const { from, isOwner, userId } = ctx;
         if (!isOwner) return conn.sendMessage(from, { text: fancy('❌ Owner only.') });
+
         const action = (args[0] || '').toLowerCase();
+
         if (action === '') {
             const on = await autoToggles.get(userId, 'statusview', null, config.autoStatusView === true);
-            return conn.sendMessage(from, { text: fancy(`👁️ Status View: ${on ? '✅ ON' : '❌ OFF'}`) });
+            return conn.sendMessage(from, {
+                text: fancy(`👁️ Status View: ${on ? '✅ ON' : '❌ OFF'}`)
+            }, { quoted: msg });
         }
-        if (!['on', 'off'].includes(action)) return conn.sendMessage(from, { text: fancy(`Usage: ${config.prefix}statusview on|off`) });
-        await autoToggles.set(userId, 'statusview', null, action === 'on');
-        return conn.sendMessage(from, { text: fancy(`✅ Status View ${action === 'on' ? 'ENABLED' : 'DISABLED'}.`) });
+        if (!['on', 'off'].includes(action)) {
+            return conn.sendMessage(from, { text: fancy(`Usage: ${config.prefix}statusview on|off`) });
+        }
+
+        const value = action === 'on';
+        await autoToggles.set(userId, 'statusview', null, value);
+        return conn.sendMessage(from, { text: fancy(`✅ Status View ${value ? 'ENABLED' : 'DISABLED'}.`) }, { quoted: msg });
+    },
+
+    // ============================================================
+    //   ENFORCEMENT — marked as read on any incoming status
+    // ============================================================
+    async onMessage(conn, msg, ctx) {
+        const from = msg.key.remoteJid;
+        if (from !== 'status@broadcast') return false;
+        if (msg.key.fromMe) return false;
+
+        try {
+            await conn.readMessages([msg.key]);
+        } catch (e) {
+            console.error('[statusview] read failed:', e.message);
+        }
+        return false; // don't consume — let statuslike/statusreply also see it
     }
 };
