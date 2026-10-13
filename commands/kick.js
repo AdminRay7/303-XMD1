@@ -1,17 +1,5 @@
 // commands/kick.js
-// Silent, instant kick. No reports, no "skipped" lines, no confirmation.
-// Usage:
-//   .kick 254xxx              → kick by phone
-//   .kick @user               → kick mentioned user
-//   (reply) .kick             → kick replied message's author
-//   .kick 254xxx 254yyy       → kick multiple
-//
-// Rules:
-//   - Owner OR group admin only
-//   - Bot must be group admin
-//   - Cannot kick bot / owner / other admins
-//   - Silent success: only reacts ⚔️ to acknowledge
-//   - Silent failure: logs to console only
+// Silent, instant kick. Uses real participant JIDs from metadata (LID-safe).
 
 const { fancy } = require('../lib/font');
 const config = require('../config');
@@ -45,15 +33,6 @@ async function isGroupAdmin(conn, groupJid, senderJid) {
     } catch { return false; }
 }
 
-async function getAllAdmins(conn, groupJid) {
-    try {
-        const meta = await conn.groupMetadata(groupJid);
-        return meta.participants
-            .filter(p => p.admin === 'admin' || p.admin === 'superadmin')
-            .map(p => bareNum(p.id));
-    } catch { return []; }
-}
-
 function resolveTargets(msg, args) {
     const targets = new Set();
 
@@ -84,7 +63,6 @@ module.exports = {
     description: 'Kick members silently (owner + admin only)',
     async execute(conn, msg, args, ctx) {
         const { from, sender, isGroup, isOwner } = ctx;
-
         if (!isGroup) return;
 
         const senderIsGroupAdmin = await isGroupAdmin(conn, from, sender);
@@ -95,34 +73,52 @@ module.exports = {
         const targets = resolveTargets(msg, args);
         if (!targets.length) return;
 
-        const admins = await getAllAdmins(conn, from);
+        // ============================================================
+        //   KEY FIX: build a map of bareNum → REAL participant JID
+        //   (handles @lid AND @s.whatsapp.net automatically)
+        // ============================================================
+        let participantMap = {};
+        let admins = [];
+        try {
+            const meta = await conn.groupMetadata(from);
+            for (const p of meta.participants) {
+                const bare = bareNum(p.id);
+                if (bare) participantMap[bare] = p.id;
+                if (p.admin === 'admin' || p.admin === 'superadmin') admins.push(bare);
+            }
+        } catch (e) {
+            console.error('[kick] metadata read failed:', e.message);
+            return;
+        }
+
         const botBare = bareNum(conn.user?.id);
         const ownerBare = String(config.ownerNumber || '').replace(/\D/g, '');
 
-        let anyKicked = false;
+        const jidsToRemove = [];
 
         for (const num of targets) {
             if (num === botBare) continue;
             if (num === ownerBare) continue;
             if (admins.includes(num)) continue;
 
-            const jid = num + '@s.whatsapp.net';
-            try {
-                await conn.groupParticipantsUpdate(from, [jid], 'remove');
-                anyKicked = true;
-            } catch (e) {
-                // silent — log only
-                console.error(`[kick] ${num}: ${e.message}`);
+            const realJid = participantMap[num];
+            if (!realJid) {
+                console.log(`[kick] ${num} not found in group participants`);
+                continue;
             }
+            jidsToRemove.push(realJid);
         }
 
-        // Silent acknowledgement — react to the command message
-        if (anyKicked) {
+        if (!jidsToRemove.length) return;
+
+        try {
+            await conn.groupParticipantsUpdate(from, jidsToRemove, 'remove');
+            // Silent acknowledgement
             try {
-                await conn.sendMessage(from, {
-                    react: { text: '⚔️', key: msg.key }
-                });
+                await conn.sendMessage(from, { react: { text: '⚔️', key: msg.key } });
             } catch {}
+        } catch (e) {
+            console.error('[kick] groupParticipantsUpdate failed:', e.message);
         }
     }
 };
