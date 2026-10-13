@@ -1,6 +1,5 @@
 // ============================================================
 //   303-XMD — handler.js
-//   Auto-detect modules (toggleable) + commands + AI (text + vision)
 // ============================================================
 const fs = require('fs-extra');
 const path = require('path');
@@ -13,14 +12,40 @@ const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 const analytics = require('./lib/analytics');
 const aiChat = require('./lib/aiChat');
 const aiVision = require('./lib/aiVision');
-const aiSettings = require('./lib/aiSettings');
-const humanChat = require('./lib/humanChat');
-const autoToggles = require('./lib/autoToggles');
+
+// Safe imports — never crash the handler if a lib is missing
+let aiSettings;
+try { aiSettings = require('./lib/aiSettings'); } catch (_) {
+    aiSettings = {
+        isEnabledCached: () => config.aiChatEnabled !== false,
+        isGroupsEnabledCached: () => config.aiChatGroups !== false,
+        getStatus: async () => ({ enabled: true, groupsEnabled: true, source: 'config' }),
+        setAiEnabled: async () => {},
+        setAiGroupsEnabled: async () => {},
+        refreshCache: async () => {}
+    };
+}
+
+let humanChat;
+try { humanChat = require('./lib/humanChat'); } catch (_) {
+    humanChat = {
+        pushContext: () => {},
+        getContext: () => '',
+        clearContext: () => {},
+        hasReplied: () => false,
+        humanize: (t) => t
+    };
+}
+
+let autoToggles;
+try { autoToggles = require('./lib/autoToggles'); } catch (_) {
+    autoToggles = { get: async () => false, set: async () => {}, getAll: async () => ({}), clearCache: () => {} };
+}
 
 // ================= HOT-RELOAD COMMAND LOADER =================
 const COMMANDS_DIR = path.join(__dirname, 'commands');
-const commandCache = new Map();   // user commands (have execute)
-const autoCache = new Map();      // auto modules (have hooks)
+const commandCache = new Map();
+const autoCache = new Map();
 let folderSignature = '';
 let lastScan = 0;
 const RESCAN_DEBOUNCE_MS = 2000;
@@ -170,18 +195,23 @@ module.exports = async (conn, m, userId = "default") => {
         };
 
         // ============================================================
-        //   RUN AUTO-DETECTION MODULES (respecting runtime toggles)
+        //   RUN AUTO-DETECTION MODULES — SAFE (async toggle check)
         // ============================================================
         for (const [, mod] of autoCache) {
-            // Skip if disabled via .auto command
-            if (mod.name && !autoToggles.isEnabled(mod.name)) continue;
-            // Skip if the module's own enabled() check returns false
             if (typeof mod.enabled === 'function' && !mod.enabled(config)) continue;
             if (typeof mod.onMessage !== 'function') continue;
 
+            // Async toggle check — only if the module declares a toggle key
+            if (mod.toggleKey) {
+                try {
+                    const on = await autoToggles.get(userId, mod.toggleKey, isGroup ? from : null, false);
+                    if (!on) continue;
+                } catch (_) { /* fall through */ }
+            }
+
             try {
                 const r = await mod.onMessage(conn, msg, cmdCtx);
-                if (r === true) return;   // consumed → stop processing
+                if (r === true) return;
             } catch (e) {
                 console.error(`auto/${mod.name}:`, e.message);
             }
@@ -323,7 +353,6 @@ module.exports = async (conn, m, userId = "default") => {
             const sysPrompt = config.aiSystemPrompt
                 || "You are a normal person chatting on WhatsApp. Keep replies short, casual, human. Use emojis occasionally. Never mention you're an AI. Match the language the person uses. No markdown, no bullet points.";
 
-            // ---------- PHOTO ----------
             if (type === "imageMessage") {
                 try {
                     const stream = await downloadContentFromMessage(msg.message.imageMessage, "image");
@@ -342,23 +371,18 @@ module.exports = async (conn, m, userId = "default") => {
                     if (config.autoTyping) {
                         try { await conn.sendPresenceUpdate('composing', from); } catch {}
                     }
-
                     const delay = isGroup ? 900 + Math.floor(Math.random() * 800) : 500;
                     await new Promise(r => setTimeout(r, delay));
 
                     const caption = (msg.message.imageMessage?.caption || "").trim();
                     const reply = await aiVision.describePhoto(buffer, "image/jpeg", caption, sysPrompt);
-
-                    if (reply) {
-                        await conn.sendMessage(from, { text: reply }, { quoted: msg });
-                    }
+                    if (reply) await conn.sendMessage(from, { text: reply }, { quoted: msg });
                 } catch (e) {
                     console.error("[vision] photo error:", e.message);
                 }
                 return;
             }
 
-            // ---------- TEXT ----------
             if (type === "conversation" || type === "extendedTextMessage") {
                 if (!body || !body.trim()) return;
                 if (humanChat.hasReplied(msg.key.id)) return;
@@ -368,20 +392,13 @@ module.exports = async (conn, m, userId = "default") => {
                 if (config.autoTyping) {
                     try { await conn.sendPresenceUpdate('composing', from); } catch {}
                 }
-
                 const delay = isGroup ? 800 + Math.floor(Math.random() * 700) : 300;
                 await new Promise(r => setTimeout(r, delay));
 
                 try {
                     let reply;
-
                     if (stored && stored.buffer) {
-                        reply = await aiVision.answerAboutPhoto(
-                            stored.buffer,
-                            stored.mime,
-                            body,
-                            sysPrompt
-                        );
+                        reply = await aiVision.answerAboutPhoto(stored.buffer, stored.mime, body, sysPrompt);
                         aiVision.setSessionImage(from, stored.buffer, stored.mime);
                     } else {
                         let prompt = body;
@@ -389,9 +406,7 @@ module.exports = async (conn, m, userId = "default") => {
                             humanChat.pushContext(from, pushname || sender.split("@")[0], body);
                             const context = humanChat.getContext(from, 15);
                             if (context) {
-                                prompt =
-                                    `You are chatting in a WhatsApp group. Recent messages:\n\n${context}\n\n` +
-                                    `Reply naturally to the latest message. Short and casual. Match the language.`;
+                                prompt = `You are chatting in a WhatsApp group. Recent messages:\n\n${context}\n\nReply naturally to the latest message. Short and casual. Match the language.`;
                             }
                         }
                         reply = await aiChat.askAI(prompt, userId, sysPrompt);
@@ -414,14 +429,20 @@ module.exports = async (conn, m, userId = "default") => {
 };
 
 // ============================================================
-//   GROUP / CALL EVENT HOOKS (respect runtime toggles)
+//   GROUP / CALL EVENT HOOKS
 // ============================================================
 module.exports.handleGroupUpdate = async (conn, update) => {
     try {
         const { id: groupJid, participants, action } = update;
         for (const [, mod] of autoCache) {
-            if (mod.name && !autoToggles.isEnabled(mod.name)) continue;
             if (typeof mod.enabled === 'function' && !mod.enabled(config)) continue;
+
+            if (mod.toggleKey) {
+                try {
+                    const on = await autoToggles.get("default", mod.toggleKey, groupJid, false);
+                    if (!on) continue;
+                } catch (_) {}
+            }
 
             if (action === 'add' && typeof mod.onGroupJoin === 'function') {
                 await mod.onGroupJoin(conn, groupJid, participants);
@@ -434,7 +455,6 @@ module.exports.handleGroupUpdate = async (conn, update) => {
 
 module.exports.handleCallEvent = async (conn, calls) => {
     for (const [, mod] of autoCache) {
-        if (mod.name && !autoToggles.isEnabled(mod.name)) continue;
         if (typeof mod.enabled === 'function' && !mod.enabled(config)) continue;
         if (typeof mod.onCall === 'function') {
             try { await mod.onCall(conn, calls); } catch (e) { console.error(`auto/${mod.name}:`, e.message); }
@@ -442,7 +462,7 @@ module.exports.handleCallEvent = async (conn, calls) => {
     }
 };
 
-// ================= EXPOSE FOR MENU / PLAYGROUND =================
+// ================= EXPOSE =================
 module.exports.getCommandCache = () => commandCache;
 module.exports.getAutoCache    = () => autoCache;
 module.exports.reloadCommands  = () => loadCommands(true);
