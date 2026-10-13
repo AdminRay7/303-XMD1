@@ -1,13 +1,9 @@
 // commands/antilink.js
-// Anti-link toggle + enforcement in one file.
-// Toggle: .antilink on | off | (no args = show state)
-// Enforce: auto-deletes links in this group when ON.
-//
-// Rules:
-//   - Toggle is OWNER-ONLY
-//   - Toggle requires: group chat + bot is group admin
-//   - Enforcement requires: group chat + bot is group admin
-//   - State is per-group (falls back to session if not set for group)
+// Multi-user anti-link. Any of these can toggle or bypass:
+//   - .env OWNER_NUMBER (bot super-owner)
+//   - The session's own linked number (session owner)
+//   - Any group admin in the current group
+// Enforcement requires: bot is group admin.
 
 const autoToggles = require('../lib/autoToggles');
 const { fancy } = require('../lib/font');
@@ -16,24 +12,21 @@ const config = require('../config');
 const URL_REGEX = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-z0-9-]+\.(com|net|org|io|co|ke|me|xyz|info|app|dev|site|online)(\/[^\s]*)?)/i;
 
 // ---------------- helpers ----------------
-async function botIsGroupAdmin(conn, groupJid) {
+function bareNum(jid) {
+    return String(jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+}
+
+async function isBotGroupAdmin(conn, groupJid) {
     try {
         const meta = await conn.groupMetadata(groupJid);
-        const botId = conn.user?.id || '';
-        const botBare = botId.split('@')[0].split(':')[0].replace(/\D/g, '');
+        const botBare  = bareNum(conn.user?.id);
+        const botLidBare = bareNum(conn.user?.lid);
 
         const me = meta.participants.find(p => {
-            const pid = String(p.id || '');
-            const pidBare = pid.split('@')[0].split(':')[0].replace(/\D/g, '');
-            return pidBare && pidBare === botBare;
+            const pidBare = bareNum(p.id);
+            return pidBare === botBare || (botLidBare && pidBare === botLidBare);
         });
-
-        if (!me) {
-            console.log('[antilink] bot not found in participants. botBare=', botBare,
-                'participants=', meta.participants.map(p => p.id));
-            return false;
-        }
-
+        if (!me) return false;
         return me.admin === 'admin' || me.admin === 'superadmin';
     } catch (e) {
         console.error('[antilink] admin check error:', e.message);
@@ -41,36 +34,64 @@ async function botIsGroupAdmin(conn, groupJid) {
     }
 }
 
+async function isGroupAdmin(conn, groupJid, senderJid) {
+    try {
+        const meta = await conn.groupMetadata(groupJid);
+        const senderBare = bareNum(senderJid);
+        return meta.participants.some(p =>
+            bareNum(p.id) === senderBare &&
+            (p.admin === 'admin' || p.admin === 'superadmin')
+        );
+    } catch (e) {
+        return false;
+    }
+}
+
+// Who can control antilink + who is exempt from deletion
+async function canControl(conn, groupJid, ctx) {
+    const { sender, isOwner } = ctx;
+    if (isOwner) return true;                                  // super-owner or session owner
+    if (msgFromBot(ctx.msg, conn)) return true;                // sent by bot itself
+    return isGroupAdmin(conn, groupJid, sender);               // any group admin
+}
+
+function msgFromBot(msg, conn) {
+    return msg?.key?.fromMe === true;
+}
+
 // ---------------- command ----------------
 module.exports = {
     name: 'antilink',
     category: 'auto',
     aliases: ['al'],
-    description: 'Toggle anti-link for this group (owner + bot admin only)',
-    toggleKey: 'antilink',   // enables the enforcement hook below
-    enabled: () => true,     // always available; runtime toggle controls enforcement
+    description: 'Toggle anti-link for this group (owner or group admin only)',
+    toggleKey: 'antilink',
+    enabled: () => true,
 
     async execute(conn, msg, args, ctx) {
-        const { from, isGroup, isOwner, userId } = ctx;
+        const { from, isGroup, userId } = ctx;
 
-        // --- guard: owner only ---
-        if (!isOwner) {
-            return conn.sendMessage(from, { text: fancy('❌ Owner only.') });
-        }
-
-        // --- guard: group only ---
+        // group only
         if (!isGroup) {
             return conn.sendMessage(from, { text: fancy('❌ Group only command.') });
         }
 
-        // --- guard: bot must be group admin ---
-        if (!(await botIsGroupAdmin(conn, from))) {
+        // sender must be owner OR group admin
+        const allowed = await canControl(conn, from, ctx);
+        if (!allowed) {
+            return conn.sendMessage(from, {
+                text: fancy('❌ Only the session owner or a group admin can use this.')
+            });
+        }
+
+        // bot must be group admin to enforce
+        if (!(await isBotGroupAdmin(conn, from))) {
             return conn.sendMessage(from, { text: fancy('❌ I must be a group admin to use this.') });
         }
 
         const action = (args[0] || '').toLowerCase();
 
-        // --- show state ---
+        // show state
         if (!action) {
             const current = await autoToggles.get(userId, 'antilink', from, config.antilink === true);
             return conn.sendMessage(from, {
@@ -78,14 +99,12 @@ module.exports = {
             }, { quoted: msg });
         }
 
-        // --- invalid ---
         if (!['on', 'off'].includes(action)) {
             return conn.sendMessage(from, {
                 text: fancy(`Usage: ${config.prefix}antilink on|off`)
             }, { quoted: msg });
         }
 
-        // --- set ---
         const value = action === 'on';
         await autoToggles.set(userId, 'antilink', from, value);
 
@@ -95,40 +114,26 @@ module.exports = {
     },
 
     // ============================================================
-    //   AUTO ENFORCEMENT HOOK
-    //   Fires on every message. Handler checks the runtime toggle
-    //   (mod.toggleKey = 'antilink') before calling this.
+    //   ENFORCEMENT — runs on every group message when toggle is ON
     // ============================================================
     async onMessage(conn, msg, ctx) {
-        const { from, sender, isGroup, isOwner, userId, body } = ctx;
+        const { from, sender, isGroup, isOwner, body } = ctx;
 
-        // group only
         if (!isGroup) return false;
-        // owner exempt
-        if (isOwner) return false;
-        // empty body
+        if (isOwner) return false;                    // super-owner / session owner exempt
+        if (msgFromBot(msg, conn)) return false;      // bot's own messages exempt
         if (!body || !body.trim()) return false;
 
-        // group admins exempt (LID-safe)
-        try {
-            const meta = await conn.groupMetadata(from);
-            const senderBare = String(sender).split('@')[0].split(':')[0].replace(/\D/g, '');
-            const adminBares = meta.participants
-                .filter(p => p.admin === 'admin' || p.admin === 'superadmin')
-                .map(p => String(p.id).split('@')[0].split(':')[0].replace(/\D/g, ''));
-            if (adminBares.includes(senderBare)) return false;
-        } catch (e) {
-            // if we can't read the group, don't act
-            return false;
-        }
+        // group admins exempt
+        if (await isGroupAdmin(conn, from, sender)) return false;
 
-        // detect link
+        // link?
         if (!URL_REGEX.test(body)) return false;
 
         // bot must be admin to delete
-        if (!(await botIsGroupAdmin(conn, from))) return false;
+        if (!(await isBotGroupAdmin(conn, from))) return false;
 
-        // delete the message
+        // delete
         try {
             await conn.sendMessage(from, { delete: msg.key });
         } catch (e) {
@@ -136,17 +141,17 @@ module.exports = {
             return false;
         }
 
-        // warn the sender
+        // warn
         try {
+            const senderBare = bareNum(sender);
             await conn.sendMessage(from, {
-                text: fancy(`⚠️ @${String(sender).split('@')[0].split(':')[0]}, links are not allowed in this group.`),
+                text: fancy(`⚠️ @${senderBare}, links are not allowed in this group.`),
                 mentions: [sender]
             });
         } catch (e) {
             console.error('[antilink] warn failed:', e.message);
         }
 
-        // consume — stop further processing
         return true;
     }
 };
