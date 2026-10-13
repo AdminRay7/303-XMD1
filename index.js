@@ -2517,17 +2517,17 @@ async function bootSocket(sessionId, session) {
         catch (err) { console.error(`[${sessionId}] handler:`, err); }
     });
 
+    // ============================================================
+    //   CALL HANDLER — runtime toggle now controls this
+    //   (.anticall on/off command sets the toggle; handler checks it)
+    // ============================================================
     conn.ev.on("call", async (calls) => {
-        if (!config.anticall) return;
-        for (const call of calls) {
-            if (call.status === "offer") {
-                try { await conn.rejectCall(call.id, call.from); } catch {}
-            }
-        }
         try {
             const h = require("./handler");
             if (typeof h.handleCallEvent === "function") await h.handleCallEvent(conn, calls);
-        } catch {}
+        } catch (e) {
+            console.error("handleCallEvent:", e.message);
+        }
     });
 
     conn.ev.on("group-participants.update", async (update) => {
