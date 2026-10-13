@@ -1,5 +1,5 @@
 // commands/add.js
-// Add members silently. Uses onWhatsApp to get the REAL JID (LID-safe).
+// Add members silently — LID-aware via onWhatsApp resolution.
 
 const { fancy } = require('../lib/font');
 const config = require('../config');
@@ -49,16 +49,15 @@ async function isGroupAdmin(conn, groupJid, senderJid) {
 }
 
 async function isBanned(sessionId, number) {
-    try {
-        return !!(await KickBan.findOne({ sessionId, number }).lean());
-    } catch { return false; }
+    try { return !!(await KickBan.findOne({ sessionId, number }).lean()); }
+    catch { return false; }
 }
 
 module.exports = {
     name: 'add',
     category: 'admin',
     aliases: [],
-    description: 'Add members to a group (owner + admin only)',
+    description: 'Add members to a group (LID-aware)',
     async execute(conn, msg, args, ctx) {
         const { from, sender, isGroup, isOwner, userId } = ctx;
         if (!isGroup) return;
@@ -66,9 +65,12 @@ module.exports = {
         const senderIsGroupAdmin = await isGroupAdmin(conn, from, sender);
         if (!isOwner && !senderIsGroupAdmin) return;
 
-        if (!(await isBotGroupAdmin(conn, from))) return;
+        if (!(await isBotGroupAdmin(conn, from))) {
+            console.log('[add] bot not group admin');
+            return;
+        }
 
-        // Collect candidate numbers
+        // Collect candidates
         const candidates = new Set();
         const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
         for (const j of mentioned) {
@@ -83,42 +85,56 @@ module.exports = {
         if (!candidates.size) return;
 
         // ============================================================
-        //   KEY FIX: use onWhatsApp() to resolve the CORRECT JID
-        //   (returns @lid JID when contact is LID-migrated)
+        //   LID-AWARE RESOLUTION
+        //   Try every known JID form until one succeeds.
         // ============================================================
-        const jidsToAdd = [];
-
         for (const num of candidates) {
             if (await isBanned(userId, num)) {
-                console.log(`[add] ${num} is banned, skipping`);
+                console.log(`[add] ${num} is banned`);
                 continue;
             }
 
-            const pnJid = num + '@s.whatsapp.net';
+            // Get all possible JID forms for this number
+            const jidsToTry = [];
 
+            // 1) Ask WhatsApp — returns the authoritative JID
             try {
-                // onWhatsApp returns the REAL JID WhatsApp expects
-                const check = await conn.onWhatsApp(pnJid);
-                if (!check || !check.length) {
+                const check = await conn.onWhatsApp(num + '@s.whatsapp.net');
+                if (check?.length) {
+                    const info = check[0];
+                    // Prefer lid form when available
+                    if (info.lid) jidsToTry.push(info.lid);
+                    if (info.jid) jidsToTry.push(info.jid);
+                } else {
                     console.log(`[add] ${num} not on WhatsApp`);
                     continue;
                 }
-                const realJid = check[0].jid || check[0].lid || pnJid;
-                jidsToAdd.push(realJid);
             } catch (e) {
                 console.error(`[add] onWhatsApp failed for ${num}:`, e.message);
             }
-        }
 
-        if (!jidsToAdd.length) return;
+            // 2) Fallback forms
+            if (!jidsToTry.includes(num + '@s.whatsapp.net')) jidsToTry.push(num + '@s.whatsapp.net');
+            if (!jidsToTry.includes(num + '@lid'))            jidsToTry.push(num + '@lid');
 
-        try {
-            await conn.groupParticipantsUpdate(from, jidsToAdd, 'add');
-            try {
-                await conn.sendMessage(from, { react: { text: '➕', key: msg.key } });
-            } catch {}
-        } catch (e) {
-            console.error('[add] groupParticipantsUpdate failed:', e.message);
+            // Try each until one works
+            let added = false;
+            for (const jid of jidsToTry) {
+                try {
+                    await conn.groupParticipantsUpdate(from, [jid], 'add');
+                    console.log(`[add] ✅ added ${num} via ${jid}`);
+                    added = true;
+                    break;
+                } catch (e) {
+                    console.log(`[add] ❌ failed ${jid}: ${e.message}`);
+                }
+            }
+
+            if (added) {
+                try {
+                    await conn.sendMessage(from, { react: { text: '➕', key: msg.key } });
+                } catch {}
+            }
         }
     }
 };
