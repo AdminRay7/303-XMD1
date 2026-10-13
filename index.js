@@ -26,6 +26,7 @@ const auditLog = require("./lib/auditLog");
 const analytics = require("./lib/analytics");
 const backupLib = require("./lib/backup");
 const aiChat = require("./lib/aiChat");
+const aiSettings = require("./lib/aiSettings");
 const payments = require("./lib/payments");
 
 const app = express();
@@ -1455,6 +1456,95 @@ app.post("/api/admin/ai/chat", adminAuth.requireAdmin, async (req, res) => {
 app.post("/api/admin/ai/clear/:sessionId", adminAuth.requireAdmin, async (req, res) => {
     aiChat.clearHistory(req.params.sessionId);
     res.json({ success: true });
+});
+
+// ============================================
+//   ADMIN — AI TOGGLE
+// ============================================
+app.get("/api/admin/ai/status", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        const status = await aiSettings.getStatus();
+        const currentSessions = global.sessions.size;
+        const activeSessions = Array.from(global.sessions.values())
+            .filter(s => s.conn?.user).length;
+
+        res.json({
+            success: true,
+            enabled: status.enabled,
+            groupsEnabled: status.groupsEnabled,
+            source: status.source,
+            config: {
+                aiChatEnabled: !!config.aiChatEnabled,
+                aiChatGroups:  !!config.aiChatGroups,
+                model: process.env.AI_MODEL || "openai/gpt-oss-20b",
+                provider: process.env.AI_PROVIDER || "openai"
+            },
+            sessions: {
+                total: currentSessions,
+                active: activeSessions
+            }
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post("/api/admin/ai/toggle", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        const { enabled } = req.body || {};
+        if (typeof enabled !== "boolean") {
+            return res.status(400).json({ error: "enabled (boolean) required" });
+        }
+
+        await aiSettings.setAiEnabled(enabled);
+        await aiSettings.refreshCache();
+
+        try {
+            await auditLog.log(req, enabled ? "ai_enable" : "ai_disable", {
+                targetType: "system",
+                details: { enabled }
+            });
+        } catch {}
+
+        console.log(fancy(`🤖 AI ${enabled ? "ENABLED" : "DISABLED"} by admin`));
+
+        res.json({
+            success: true,
+            enabled,
+            message: `AI has been turned ${enabled ? "ON" : "OFF"}`
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post("/api/admin/ai/toggle-groups", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        const { enabled } = req.body || {};
+        if (typeof enabled !== "boolean") {
+            return res.status(400).json({ error: "enabled (boolean) required" });
+        }
+
+        await aiSettings.setAiGroupsEnabled(enabled);
+        await aiSettings.refreshCache();
+
+        try {
+            await auditLog.log(req, enabled ? "ai_groups_enable" : "ai_groups_disable", {
+                targetType: "system",
+                details: { enabled }
+            });
+        } catch {}
+
+        console.log(fancy(`🤖 AI group replies ${enabled ? "ENABLED" : "DISABLED"}`));
+
+        res.json({
+            success: true,
+            groupsEnabled: enabled,
+            message: `Group replies ${enabled ? "ON" : "OFF"}`
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // ============================================
