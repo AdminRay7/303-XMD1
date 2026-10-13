@@ -6,36 +6,28 @@ module.exports = {
     name: 'antibug',
     category: 'auto',
     aliases: [],
-    description: 'Toggle antibug',
+    description: 'Toggle anti-bug',
+    toggleKey: 'antibug',
+    enabled: () => true,
     async execute(conn, msg, args, ctx) {
-        const { from, isGroup, isOwner } = ctx;
+        const { from, isGroup, isOwner, userId } = ctx;
         if (!isOwner) return conn.sendMessage(from, { text: fancy('❌ Owner only.') });
-        trueif (!isGroup) return conn.sendMessage(from, { text: fancy('❌ Group only command.') });
-        true
-        if (isGroup) {
-            try {
-                const meta = await conn.groupMetadata(from);
-                const botJid = conn.user?.id?.split(':')[0] + '@s.whatsapp.net';
-                const me = meta.participants.find(p => p.id === botJid || p.id === conn.user?.id);
-                if (!me || (me.admin !== 'admin' && me.admin !== 'superadmin')) {
-                    return conn.sendMessage(from, { text: fancy('❌ I must be a group admin to toggle this.') });
-                }
-            } catch (e) {
-                return conn.sendMessage(from, { text: fancy('❌ Cannot read group info.') });
+        if (!isGroup) return conn.sendMessage(from, { text: fancy('❌ Group only command.') });
+        try {
+            const meta = await conn.groupMetadata(from);
+            const botBare = String(conn.user?.id || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+            const me = meta.participants.find(p => String(p.id).split('@')[0].split(':')[0].replace(/\D/g, '') === botBare);
+            if (!me || (me.admin !== 'admin' && me.admin !== 'superadmin')) {
+                return conn.sendMessage(from, { text: fancy('❌ I must be a group admin to use this.') });
             }
-        }
-        
+        } catch { return conn.sendMessage(from, { text: fancy('❌ Cannot read group info.') }); }
         const action = (args[0] || '').toLowerCase();
-        if (!['on', 'off', ''].includes(action)) {
-            return conn.sendMessage(from, { text: fancy(`Usage: ${config.prefix}antibug on|off`) });
-        }
-        const scope = isGroup ? from : null;
         if (action === '') {
-            const current = await autoToggles.get(ctx.userId, 'antibug', scope, config.antibug === true);
-            return conn.sendMessage(from, { text: fancy(`🐛 antibug: ${current ? '✅ ON' : '❌ OFF'}`) });
+            const on = await autoToggles.get(userId, 'antibug', from, config.antibug === true);
+            return conn.sendMessage(from, { text: fancy(`🐛 Anti-Bug: ${on ? '✅ ON' : '❌ OFF'}`) });
         }
-        const value = action === 'on';
-        await autoToggles.set(ctx.userId, 'antibug', scope, value);
-        return conn.sendMessage(from, { text: fancy(`✅ antibug ${value ? 'ENABLED' : 'DISABLED'}.`) });
+        if (!['on', 'off'].includes(action)) return conn.sendMessage(from, { text: fancy(`Usage: ${config.prefix}antibug on|off`) });
+        await autoToggles.set(userId, 'antibug', from, action === 'on');
+        return conn.sendMessage(from, { text: fancy(`✅ Anti-Bug ${action === 'on' ? 'ENABLED' : 'DISABLED'}.`) });
     }
 };
