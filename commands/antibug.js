@@ -40,29 +40,22 @@ async function isGroupAdmin(conn, groupJid, senderJid) {
 // ============================================================
 //   BUG DETECTION
 // ============================================================
-// Layer 1 — Zero-width / invisible characters commonly used to crash
 const ZERO_WIDTH = /[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\u00AD]/;
-
-// Layer 2 — Arabic / Syriac / other RTL control characters
 const RTL_CONTROL = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/;
 
-// Layer 3 — Zalgo (excessive combining diacritics)
-// If > 15 combining marks in a row → bug
 function hasZalgo(text) {
     if (!text) return false;
     const combining = text.match(/[\u0300-\u036F\u0483-\u0489\u1AB0-\u1AFF\u1DC0-\u1DFF\u20D0-\u20FF\uFE20-\uFE2F]/g);
     return combining && combining.length > 15;
 }
 
-// Layer 4 — Oversized messages (WhatsApp bug payloads are huge)
 const MAX_MESSAGE_LENGTH = 5000;
 
-// Layer 5 — Known crash sequences
 const KNOWN_PATTERNS = [
-    /[\u202E\u202D]{5,}/,          // Many RTL overrides
-    /\u200B{10,}/,                 // Many zero-widths
-    /\u061C{10,}/,                 // Many Arabic letter marks
-    /[\u202A-\u202E]{3,}/          // RTL embed chains
+    /[\u202E\u202D]{5,}/,
+    /\u200B{10,}/,
+    /\u061C{10,}/,
+    /[\u202A-\u202E]{3,}/
 ];
 
 function detectBug(text) {
@@ -143,7 +136,7 @@ module.exports = {
     //   ENFORCEMENT
     // ============================================================
     async onMessage(conn, msg, ctx) {
-        const { from, sender, isGroup, isOwner, body, userId } = ctx;
+        const { from, sender, isGroup, isOwner, body } = ctx;
 
         if (isOwner) return false;
         if (msg.key.fromMe) return false;
@@ -173,17 +166,10 @@ module.exports = {
             return false;
         }
 
-        // warn
+        // warn — simple, clean, no details
         try {
-            const senderBare = bareNum(sender);
-            const warning =
-                `🐛 *Anti-Bug*\n\n` +
-                `⚠️ @${senderBare}, your message was removed.\n` +
-                `Reason: ${bug.reason} (${bug.detail})`;
-
             await conn.sendMessage(from, {
-                text: fancy(warning),
-                mentions: [sender]
+                text: fancy('🐛 *BUG DETECTED*')
             });
         } catch (e) {
             console.error('[antibug] warn failed:', e.message);
