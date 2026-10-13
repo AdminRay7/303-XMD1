@@ -20,12 +20,23 @@ async function botIsGroupAdmin(conn, groupJid) {
     try {
         const meta = await conn.groupMetadata(groupJid);
         const botId = conn.user?.id || '';
-        const botLid = botId.split(':')[0] + '@s.whatsapp.net';
-        const me = meta.participants.find(p =>
-            p.id === botId || p.id === botLid || p.id?.split(':')[0] === botId.split(':')[0]
-        );
-        return !!(me && (me.admin === 'admin' || me.admin === 'superadmin'));
+        const botBare = botId.split('@')[0].split(':')[0].replace(/\D/g, '');
+
+        const me = meta.participants.find(p => {
+            const pid = String(p.id || '');
+            const pidBare = pid.split('@')[0].split(':')[0].replace(/\D/g, '');
+            return pidBare && pidBare === botBare;
+        });
+
+        if (!me) {
+            console.log('[antilink] bot not found in participants. botBare=', botBare,
+                'participants=', meta.participants.map(p => p.id));
+            return false;
+        }
+
+        return me.admin === 'admin' || me.admin === 'superadmin';
     } catch (e) {
+        console.error('[antilink] admin check error:', e.message);
         return false;
     }
 }
@@ -98,14 +109,14 @@ module.exports = {
         // empty body
         if (!body || !body.trim()) return false;
 
-        // group admins exempt (optional — remove if you want to nuke admins too)
+        // group admins exempt (LID-safe)
         try {
             const meta = await conn.groupMetadata(from);
-            const adminIds = meta.participants
+            const senderBare = String(sender).split('@')[0].split(':')[0].replace(/\D/g, '');
+            const adminBares = meta.participants
                 .filter(p => p.admin === 'admin' || p.admin === 'superadmin')
-                .map(p => p.id);
-            const senderBare = sender.split(':')[0];
-            if (adminIds.some(id => id === sender || id.split(':')[0] === senderBare)) return false;
+                .map(p => String(p.id).split('@')[0].split(':')[0].replace(/\D/g, ''));
+            if (adminBares.includes(senderBare)) return false;
         } catch (e) {
             // if we can't read the group, don't act
             return false;
@@ -128,7 +139,7 @@ module.exports = {
         // warn the sender
         try {
             await conn.sendMessage(from, {
-                text: fancy(`⚠️ @${sender.split('@')[0]}, links are not allowed in this group.`),
+                text: fancy(`⚠️ @${String(sender).split('@')[0].split(':')[0]}, links are not allowed in this group.`),
                 mentions: [sender]
             });
         } catch (e) {
