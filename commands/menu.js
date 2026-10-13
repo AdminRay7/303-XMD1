@@ -1,95 +1,140 @@
-cd ~/storage/downloads/303-xmd-commands && cat > menu.js << 'EOF'
 const fs = require('fs-extra');
 const path = require('path');
 const config = require('../config');
 const { fancy } = require('../lib/font');
 
+// Resolve /Assets folder at project root
+const ASSETS_DIR = path.join(__dirname, '..', 'Assets');
+const COMMANDS_DIR = path.join(__dirname, '..', 'commands');
+
+// ============================================================
+//   FIND MENU IMAGE
+// ============================================================
+function findMenuImage() {
+    if (!fs.existsSync(ASSETS_DIR)) return null;
+    const files = fs.readdirSync(ASSETS_DIR);
+    const img = files.find(f => /^menu\.(png|jpe?g|webp|gif)$/i.test(f));
+    return img ? path.join(ASSETS_DIR, img) : null;
+}
+
+// ============================================================
+//   SCAN COMMANDS FOLDER
+//   Reads every .js recursively. Picks up:
+//   - module.name
+//   - module.category (defaults to "general")
+//   - module.description (optional)
+//   - module.aliases (optional, not shown in menu)
+// ============================================================
+function scanCommands() {
+    if (!fs.existsSync(COMMANDS_DIR)) return [];
+    const seen = new Set();
+    const list = [];
+
+    const walk = (dir) => {
+        for (const item of fs.readdirSync(dir)) {
+            const itemPath = path.join(dir, item);
+            const stat = fs.statSync(itemPath);
+            if (stat.isDirectory()) {
+                walk(itemPath);
+            } else if (item.endsWith('.js')) {
+                try {
+                    delete require.cache[require.resolve(itemPath)];
+                    const mod = require(itemPath);
+                    if (!mod || typeof mod.execute !== 'function') continue;
+                    if (seen.has(mod)) continue;
+                    seen.add(mod);
+
+                    const name = (mod.name || path.basename(itemPath, '.js')).toLowerCase();
+                    const category = (mod.category || 'general').toLowerCase();
+
+                    list.push({ name, category });
+                } catch (e) {
+                    console.error(`menu scan: ${itemPath}:`, e.message);
+                }
+            }
+        }
+    };
+
+    walk(COMMANDS_DIR);
+    return list;
+}
+
+// ============================================================
+//   BUILD MENU TEXT
+//   Groups by category. Shows only the primary command name.
+//   No aliases in the menu — clean look.
+// ============================================================
+function buildMenuText(cmds, ctx) {
+    const groups = {};
+    for (const c of cmds) {
+        if (!groups[c.category]) groups[c.category] = [];
+        groups[c.category].push(c.name);
+    }
+
+    // Sort: "general" first, then alphabetical
+    const catOrder = Object.keys(groups).sort((a, b) => {
+        if (a === 'general') return -1;
+        if (b === 'general') return 1;
+        return a.localeCompare(b);
+    });
+
+    const username = ctx?.pushname || 'User';
+
+    let text =
+        `╭─〔 🔑 ${config.botName} 〕\n` +
+        `│\n` +
+        `│ 👤 USER   : ${username}\n` +
+        `│ 🎯 PREFIX : ${config.prefix}\n` +
+        `│\n` +
+        `╰──────────────────────\n\n`;
+
+    for (const cat of catOrder) {
+        const names = groups[cat].sort();
+        text += `╭─〔 📌 ${cat.toUpperCase()} 〕\n`;
+        text += `│\n`;
+        for (const n of names) {
+            text += `│ ◇ ${config.prefix}${n}\n`;
+        }
+        text += `│\n`;
+        text += `╰──────────────────────\n\n`;
+    }
+
+    text += `_${fancy(config.footer)}_`;
+    return text;
+}
+
+// ============================================================
+//   EXPORT
+// ============================================================
 module.exports = {
     name: 'menu',
     category: 'general',
-    aliases: ['help', 'h'],
-    description: 'Show all available commands',
+    aliases: ['help', 'commands', 'cmds'],
+    description: 'Show all available commands grouped by category',
+
     async execute(conn, msg, args, ctx) {
         const { from } = ctx;
-        const prefix = config.prefix || '.';
+        const cmds = scanCommands();
 
-        // Live-scan commands folder every time
-        const cmdDir = path.join(__dirname);
-        const grouped = {};
-
-        const walk = (dir) => {
-            for (const item of fs.readdirSync(dir)) {
-                const full = path.join(dir, item);
-                const stat = fs.statSync(full);
-                if (stat.isDirectory()) { walk(full); continue; }
-                if (!item.endsWith('.js')) continue;
-                if (item === 'menu.js') continue;
-                try {
-                    delete require.cache[require.resolve(full)];
-                    const mod = require(full);
-                    if (!mod || typeof mod.execute !== 'function') continue;
-                    const cat = (mod.category || 'general').toLowerCase();
-                    if (!grouped[cat]) grouped[cat] = [];
-                    grouped[cat].push({
-                        name: mod.name || item.replace('.js', ''),
-                        desc: mod.description || ''
-                    });
-                } catch (e) { /* skip broken files */ }
-            }
-        };
-        try { walk(cmdDir); } catch (e) { console.error('menu walk:', e.message); }
-
-        // Category order + emoji
-        const CAT_META = {
-            general:  { emoji: '📌', title: 'GENERAL' },
-            admin:    { emoji: '🛡️', title: 'ADMIN' },
-            group:    { emoji: '👥', title: 'GROUP' },
-            fun:      { emoji: '🎮', title: 'FUN' },
-            tools:    { emoji: '🔧', title: 'TOOLS' },
-            text:     { emoji: '✍️', title: 'TEXT' },
-            media:    { emoji: '🖼️', title: 'MEDIA' },
-            misc:     { emoji: '📎', title: 'MISC' },
-            ai:       { emoji: '🤖', title: 'AI' },
-            download: { emoji: '⬇️', title: 'DOWNLOAD' },
-            auto:     { emoji: '⚙️', title: 'AUTO TOGGLES' }
-        };
-
-        const order = ['general','admin','group','fun','tools','text','media','misc','ai','download','auto'];
-        for (const k of Object.keys(grouped)) if (!order.includes(k)) order.push(k);
-
-        let text = `╭─〔 🔑 ${fancy(config.botName || '303-XMD')} 〕\n│\n`;
-        text += `│ 👤 ᴜsᴇʀ   : ${ctx.pushname || 'User'}\n`;
-        text += `│ 🎯 ᴘʀᴇғɪx : ${prefix}\n`;
-        text += `│ 📦 ᴄᴍᴅs   : ${Object.values(grouped).reduce((a,b)=>a+b.length,0)}\n`;
-        text += `│\n╰──────────────────────\n\n`;
-
-        for (const cat of order) {
-            const items = grouped[cat];
-            if (!items || !items.length) continue;
-            const meta = CAT_META[cat] || { emoji: '📁', title: cat.toUpperCase() };
-            items.sort((a,b) => a.name.localeCompare(b.name));
-            text += `╭─〔 ${meta.emoji} ${fancy(meta.title)} 〕\n│\n`;
-            for (const c of items) {
-                text += `│ ◇ ${prefix}${c.name}\n`;
-            }
-            text += `│\n╰──────────────────────\n\n`;
+        if (!cmds.length) {
+            return conn.sendMessage(from, { text: 'No commands found.' }, { quoted: msg });
         }
 
-        text += `_${fancy(config.footer || '303-XMD — THE LAST KEY')}_`;
+        const text = buildMenuText(cmds, ctx);
+        const imgPath = findMenuImage();
 
-        // Send with image if Assets/menu.png exists
-        const imgPath = path.join(__dirname, '..', 'Assets', 'menu.png');
-        try {
-            if (fs.existsSync(imgPath)) {
-                const buffer = fs.readFileSync(imgPath);
-                await conn.sendMessage(from, { image: buffer, caption: text }, { quoted: msg });
-            } else {
-                await conn.sendMessage(from, { text }, { quoted: msg });
+        if (imgPath) {
+            try {
+                const buffer = await fs.readFile(imgPath);
+                return conn.sendMessage(from, {
+                    image: buffer,
+                    caption: text
+                }, { quoted: msg });
+            } catch (e) {
+                console.error('Menu image send failed:', e.message);
             }
-        } catch (e) {
-            await conn.sendMessage(from, { text }, { quoted: msg });
         }
+
+        await conn.sendMessage(from, { text }, { quoted: msg });
     }
 };
-EOF
-echo "✅ menu.js created in ~/storage/downloads/303-xmd-commands/"
