@@ -6,36 +6,30 @@ module.exports = {
     name: 'antidelete',
     category: 'auto',
     aliases: [],
-    description: 'Toggle antidelete',
+    description: 'Toggle anti-delete',
+    toggleKey: 'antidelete',
+    enabled: () => true,
     async execute(conn, msg, args, ctx) {
-        const { from, isGroup, isOwner } = ctx;
+        const { from, isGroup, isOwner, userId } = ctx;
         if (!isOwner) return conn.sendMessage(from, { text: fancy('❌ Owner only.') });
-        falseif (!isGroup) return conn.sendMessage(from, { text: fancy('❌ Group only command.') });
-        false
         if (isGroup) {
             try {
                 const meta = await conn.groupMetadata(from);
-                const botJid = conn.user?.id?.split(':')[0] + '@s.whatsapp.net';
-                const me = meta.participants.find(p => p.id === botJid || p.id === conn.user?.id);
+                const botBare = String(conn.user?.id || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+                const me = meta.participants.find(p => String(p.id).split('@')[0].split(':')[0].replace(/\D/g, '') === botBare);
                 if (!me || (me.admin !== 'admin' && me.admin !== 'superadmin')) {
-                    return conn.sendMessage(from, { text: fancy('❌ I must be a group admin to toggle this.') });
+                    return conn.sendMessage(from, { text: fancy('❌ I must be a group admin to use this.') });
                 }
-            } catch (e) {
-                return conn.sendMessage(from, { text: fancy('❌ Cannot read group info.') });
-            }
+            } catch { return conn.sendMessage(from, { text: fancy('❌ Cannot read group info.') }); }
         }
-        
         const action = (args[0] || '').toLowerCase();
-        if (!['on', 'off', ''].includes(action)) {
-            return conn.sendMessage(from, { text: fancy(`Usage: ${config.prefix}antidelete on|off`) });
-        }
         const scope = isGroup ? from : null;
         if (action === '') {
-            const current = await autoToggles.get(ctx.userId, 'antidelete', scope, config.antidelete === true);
-            return conn.sendMessage(from, { text: fancy(`🗑️ antidelete: ${current ? '✅ ON' : '❌ OFF'}`) });
+            const on = await autoToggles.get(userId, 'antidelete', scope, config.antidelete === true);
+            return conn.sendMessage(from, { text: fancy(`🗑️ Anti-Delete: ${on ? '✅ ON' : '❌ OFF'}`) });
         }
-        const value = action === 'on';
-        await autoToggles.set(ctx.userId, 'antidelete', scope, value);
-        return conn.sendMessage(from, { text: fancy(`✅ antidelete ${value ? 'ENABLED' : 'DISABLED'}.`) });
+        if (!['on', 'off'].includes(action)) return conn.sendMessage(from, { text: fancy(`Usage: ${config.prefix}antidelete on|off`) });
+        await autoToggles.set(userId, 'antidelete', scope, action === 'on');
+        return conn.sendMessage(from, { text: fancy(`✅ Anti-Delete ${action === 'on' ? 'ENABLED' : 'DISABLED'}.`) });
     }
 };
