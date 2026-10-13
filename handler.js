@@ -1,5 +1,6 @@
 // ============================================================
 //   303-XMD — handler.js
+//   Auto-detect modules (toggleable) + commands + AI (text + vision)
 // ============================================================
 const fs = require('fs-extra');
 const path = require('path');
@@ -180,18 +181,32 @@ module.exports = async (conn, m, userId = "default") => {
         const isGroup   = from.endsWith('@g.us');
         const isChannel = from.endsWith('@newsletter');
         const isStatus  = from === 'status@broadcast';
-        const isOwner   = String(config.ownerNumber).includes(sender.split('@')[0]) || msg.key.fromMe;
         const prefix    = config.prefix;
         const isCmd     = body && body.startsWith(prefix);
         const command   = isCmd ? body.slice(prefix.length).trim().split(' ')[0].toLowerCase() : '';
         const args      = body ? body.trim().split(/ +/).slice(1) : [];
+
+        // ============================================================
+        //   OWNER DETECTION
+        //   Matches: OWNER_NUMBER, session's own linked number, fromMe
+        // ============================================================
+        const senderBare    = String(sender).split('@')[0].split(':')[0].replace(/\D/g, '');
+        const sessionJid    = conn.user?.id || '';
+        const sessionBare   = sessionJid.split('@')[0].split(':')[0].replace(/\D/g, '');
+        const ownerCfgBare  = String(config.ownerNumber || '').replace(/\D/g, '');
+
+        const isOwner =
+            msg.key.fromMe === true ||
+            (senderBare && senderBare === ownerCfgBare) ||
+            (senderBare && senderBare === sessionBare);
 
         try { loadCommands(false); } catch {}
 
         // ================= CONTEXT =================
         const cmdCtx = {
             from, sender, fancy, isOwner, pushname, config, conn, msg,
-            userId, isGroup, isChannel, isStatus, body, args, command, prefix, isCmd
+            userId, isGroup, isChannel, isStatus, body, args, command, prefix, isCmd,
+            senderBare, sessionBare, ownerCfgBare
         };
 
         // ============================================================
