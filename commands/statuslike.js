@@ -1,13 +1,11 @@
 // commands/statuslike.js
-// Auto-react to incoming WhatsApp statuses with a random heart/emoji.
+// Auto-react to incoming WhatsApp statuses with a random emoji.
 // Toggle: .statuslike on | off | (no args = show state)
-// Scope: session-wide.
 
 const autoToggles = require('../lib/autoToggles');
 const { fancy } = require('../lib/font');
 const config = require('../config');
 
-// Reaction palette
 const EMOJIS = [
     '❤️','🧡','💛','💚','🩵','💙','💜','🤎','🖤','🩶','🤍','🩷',
     '⭐','🌟','✨','⚡','💫','💔','♥️','❣️','👀','👁️'
@@ -44,41 +42,30 @@ module.exports = {
         }, { quoted: msg });
     },
 
-    // ============================================================
-    //   ENFORCEMENT — react on every incoming status
-    // ============================================================
     async onMessage(conn, msg, ctx) {
         const from = msg.key.remoteJid;
         if (from !== 'status@broadcast') return false;
         if (msg.key.fromMe) return false;
 
         const posterJid = msg.key.participant || msg.participant;
-        if (!posterJid) {
-            console.log('[statuslike] no participant in key');
-            return false;
-        }
+        if (!posterJid) return false;
 
         const emoji = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
 
-        // Try method 1 — pass original msg.key + statusJidList
+        // Method 1 — original key + statusJidList
         try {
             await conn.sendMessage(
                 'status@broadcast',
-                {
-                    react: {
-                        text: emoji,
-                        key: msg.key
-                    }
-                },
+                { react: { text: emoji, key: msg.key } },
                 { statusJidList: [posterJid] }
             );
-            console.log(`[statuslike] reacted ${emoji} to ${posterJid} (method 1 OK)`);
+            console.log(`[statuslike] reacted ${emoji} to ${posterJid} (m1)`);
             return false;
         } catch (e) {
-            console.error('[statuslike] method 1 failed:', e.message);
+            console.error('[statuslike] m1 failed:', e.message);
         }
 
-        // Try method 2 — explicit key with participant field
+        // Method 2 — explicit key with participant
         try {
             await conn.sendMessage(
                 'status@broadcast',
@@ -95,10 +82,9 @@ module.exports = {
                 },
                 { statusJidList: [posterJid] }
             );
-            console.log(`[statuslike] reacted ${emoji} to ${posterJid} (method 2 OK)`);
-            return false;
+            console.log(`[statuslike] reacted ${emoji} to ${posterJid} (m2)`);
         } catch (e) {
-            console.error('[statuslike] method 2 failed:', e.message);
+            console.error('[statuslike] m2 failed:', e.message);
         }
 
         return false;
