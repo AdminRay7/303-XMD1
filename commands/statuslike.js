@@ -1,21 +1,22 @@
 // commands/statuslike.js
-// Auto-react to incoming WhatsApp statuses with a random emoji.
+// Auto-react to incoming WhatsApp statuses with a random heart/emoji.
 // Toggle: .statuslike on | off | (no args = show state)
 // Scope: session-wide.
-//
-// Fixed: uses the ORIGINAL msg.key (with participant) + statusJidList.
-// This is the only format Baileys 6.7.x accepts for status reactions.
 
 const autoToggles = require('../lib/autoToggles');
 const { fancy } = require('../lib/font');
 const config = require('../config');
 
-const EMOJIS = ['🔥', '❤️', '💯', '👏', '😂', '😮', '✨', '👌', '🙌', '💫'];
+// Reaction palette
+const EMOJIS = [
+    '❤️','🧡','💛','💚','🩵','💙','💜','🤎','🖤','🩶','🤍','🩷',
+    '⭐','🌟','✨','⚡','💫','💔','♥️','❣️','👀','👁️'
+];
 
 module.exports = {
     name: 'statuslike',
     category: 'auto',
-    aliases: ['autolike', 'sl'],
+    aliases: ['sl'],
     description: 'Auto-react to WhatsApp statuses',
     toggleKey: 'statuslike',
     enabled: () => true,
@@ -29,7 +30,7 @@ module.exports = {
         if (action === '') {
             const on = await autoToggles.get(userId, 'statuslike', null, config.autoStatusLike === true);
             return conn.sendMessage(from, {
-                text: fancy(`❤️ Status Like: ${on ? '✅ ON' : '❌ OFF'}`)
+                text: fancy(`💖 Status Like: ${on ? '✅ ON' : '❌ OFF'}`)
             }, { quoted: msg });
         }
         if (!['on', 'off'].includes(action)) {
@@ -59,11 +60,9 @@ module.exports = {
 
         const emoji = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
 
-        // Baileys 6.7.x — the reaction on a status requires:
-        //   - the ORIGINAL message key (which already includes participant)
-        //   - statusJidList containing the poster's JID
+        // Try method 1 — pass original msg.key + statusJidList
         try {
-            const result = await conn.sendMessage(
+            await conn.sendMessage(
                 'status@broadcast',
                 {
                     react: {
@@ -73,9 +72,33 @@ module.exports = {
                 },
                 { statusJidList: [posterJid] }
             );
-            console.log(`[statuslike] reacted ${emoji} to ${posterJid}`, result?.key?.id || '');
+            console.log(`[statuslike] reacted ${emoji} to ${posterJid} (method 1 OK)`);
+            return false;
         } catch (e) {
-            console.error('[statuslike] react failed:', e.message);
+            console.error('[statuslike] method 1 failed:', e.message);
+        }
+
+        // Try method 2 — explicit key with participant field
+        try {
+            await conn.sendMessage(
+                'status@broadcast',
+                {
+                    react: {
+                        text: emoji,
+                        key: {
+                            remoteJid: 'status@broadcast',
+                            fromMe: false,
+                            id: msg.key.id,
+                            participant: posterJid
+                        }
+                    }
+                },
+                { statusJidList: [posterJid] }
+            );
+            console.log(`[statuslike] reacted ${emoji} to ${posterJid} (method 2 OK)`);
+            return false;
+        } catch (e) {
+            console.error('[statuslike] method 2 failed:', e.message);
         }
 
         return false;
