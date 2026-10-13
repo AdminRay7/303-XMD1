@@ -41,8 +41,8 @@ try { autoToggles = require('./lib/autoToggles'); } catch (_) {
 
 // ================= HOT-RELOAD COMMAND LOADER =================
 const COMMANDS_DIR = path.join(__dirname, 'commands');
-const commandCache = new Map();   // user commands → execute(conn,msg,args,ctx)
-const autoCache = new Map();      // enforcement hooks → onMessage/onCall/onGroupJoin/onGroupLeave
+const commandCache = new Map();
+const autoCache = new Map();
 let folderSignature = '';
 let lastScan = 0;
 const RESCAN_DEBOUNCE_MS = 2000;
@@ -93,15 +93,12 @@ function loadCommands(force = false) {
                                 typeof mod.onGroupJoin === 'function' ||
                                 typeof mod.onGroupLeave === 'function';
 
-                // Command registration
                 if (hasExecute) {
                     const names = [mod.name, ...(Array.isArray(mod.aliases) ? mod.aliases : [])]
                         .filter(Boolean).map(s => String(s).toLowerCase());
                     for (const n of names) commandCache.set(n, mod);
                 }
 
-                // Enforcement hook registration
-                // (Patch B) — loosened: register any module with a toggleKey + any hook
                 if (hasHook && mod.toggleKey) {
                     autoCache.set(mod.name || itemPath, mod);
                 }
@@ -207,7 +204,6 @@ module.exports = async (conn, m, userId = "default") => {
 
         // ============================================================
         //   CACHE EVERY INCOMING MESSAGE (for antidelete media recovery)
-        //   (Patch A)
         // ============================================================
         if (!msg.key.fromMe && !isStatus && !isChannel) {
             try {
@@ -241,7 +237,7 @@ module.exports = async (conn, m, userId = "default") => {
                         const stream = await downloadContentFromMessage(msg.message[type], mediaKind);
                         const chunks = [];
                         let total = 0;
-                        const MAX = 20 * 1024 * 1024;   // 20MB max cached
+                        const MAX = 20 * 1024 * 1024;
                         for await (const c of stream) {
                             total += c.length;
                             if (total > MAX) throw new Error('Media > 20MB, not cached');
@@ -277,13 +273,10 @@ module.exports = async (conn, m, userId = "default") => {
 
         // ============================================================
         //   AUTO ENFORCEMENT LAYER
-        //   Only runs modules with toggleKey + onMessage
         // ============================================================
         for (const [, mod] of autoCache) {
-            // Only run onMessage-having modules in this loop
             if (typeof mod.onMessage !== 'function') continue;
 
-            // Runtime toggle check (async)
             let on = false;
             try {
                 on = await autoToggles.get(userId, mod.toggleKey, isGroup ? from : null, false);
@@ -503,11 +496,19 @@ module.exports.handleGroupUpdate = async (conn, update) => {
     } catch (e) { console.error("group update:", e.message); }
 };
 
+// ============================================================
+//   CALL EVENT HOOK — patched to check the runtime toggle
+// ============================================================
 module.exports.handleCallEvent = async (conn, calls) => {
     for (const [, mod] of autoCache) {
         if (!mod.toggleKey) continue;
-        if (typeof mod.onCall === 'function') {
-            try { await mod.onCall(conn, calls); } catch (e) { console.error(`auto/${mod.name}:`, e.message); }
+        if (typeof mod.onCall !== 'function') continue;
+        try {
+            const on = await autoToggles.get("default", mod.toggleKey, null, false);
+            if (!on) continue;
+            await mod.onCall(conn, calls);
+        } catch (e) {
+            console.error(`auto/${mod.name}:`, e.message);
         }
     }
 };
