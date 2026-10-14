@@ -1,5 +1,5 @@
 // commands/add.js
-// Add members silently — LID-aware via onWhatsApp resolution.
+// Add members to a group — with clear feedback every time.
 
 const { fancy } = require('../lib/font');
 const config = require('../config');
@@ -57,20 +57,24 @@ module.exports = {
     name: 'add',
     category: 'admin',
     aliases: [],
-    description: 'Add members to a group (LID-aware)',
+    description: 'Add members to a group (owner + admin only)',
     async execute(conn, msg, args, ctx) {
         const { from, sender, isGroup, isOwner, userId } = ctx;
-        if (!isGroup) return;
 
-        const senderIsGroupAdmin = await isGroupAdmin(conn, from, sender);
-        if (!isOwner && !senderIsGroupAdmin) return;
-
-        if (!(await isBotGroupAdmin(conn, from))) {
-            console.log('[add] bot not group admin');
-            return;
+        if (!isGroup) {
+            return conn.sendMessage(from, { text: fancy('❌ Group only command.') }, { quoted: msg });
         }
 
-        // Collect candidates
+        const senderIsGroupAdmin = await isGroupAdmin(conn, from, sender);
+        if (!isOwner && !senderIsGroupAdmin) {
+            return conn.sendMessage(from, { text: fancy('❌ Only the owner or a group admin can use this.') }, { quoted: msg });
+        }
+
+        if (!(await isBotGroupAdmin(conn, from))) {
+            return conn.sendMessage(from, { text: fancy('❌ I must be a group admin to add members.') }, { quoted: msg });
+        }
+
+        // ---- Collect candidates ----
         const candidates = new Set();
         const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
         for (const j of mentioned) {
@@ -82,59 +86,85 @@ module.exports = {
             if (d.length >= 10 && d.length <= 15) candidates.add(d);
         }
 
-        if (!candidates.size) return;
+        if (!candidates.size) {
+            return conn.sendMessage(from, {
+                text: fancy(`Usage: ${config.prefix}add 2547XXXXXXXX`)
+            }, { quoted: msg });
+        }
 
-        // ============================================================
-        //   LID-AWARE RESOLUTION
-        //   Try every known JID form until one succeeds.
-        // ============================================================
+        // ---- Get current group members (bare numbers) ----
+        let currentMembers = new Set();
+        try {
+            const meta = await conn.groupMetadata(from);
+            for (const p of meta.participants) {
+                const n = bareNum(p.id);
+                if (n) currentMembers.add(n);
+            }
+        } catch (e) {
+            return conn.sendMessage(from, { text: fancy(`❌ Cannot read group info: ${e.message}`) }, { quoted: msg });
+        }
+
+        const added    = [];
+        const already  = [];
+        const notOnWA  = [];
+        const bannedL  = [];
+        const failed   = [];
+
         for (const num of candidates) {
-            if (await isBanned(userId, num)) {
-                console.log(`[add] ${num} is banned`);
+            // Already in group?
+            if (currentMembers.has(num)) {
+                already.push(num);
                 continue;
             }
 
-            // Get all possible JID forms for this number
-            const jidsToTry = [];
+            // Banned?
+            if (await isBanned(userId, num)) {
+                bannedL.push(num);
+                continue;
+            }
 
-            // 1) Ask WhatsApp — returns the authoritative JID
+            const pnJid = num + '@s.whatsapp.net';
+
+            // Not on WhatsApp?
+            let exists = false;
             try {
-                const check = await conn.onWhatsApp(num + '@s.whatsapp.net');
-                if (check?.length) {
-                    const info = check[0];
-                    // Prefer lid form when available
-                    if (info.lid) jidsToTry.push(info.lid);
-                    if (info.jid) jidsToTry.push(info.jid);
-                } else {
-                    console.log(`[add] ${num} not on WhatsApp`);
-                    continue;
-                }
+                const check = await conn.onWhatsApp(pnJid);
+                exists = !!(check && check.length && check[0].exists);
             } catch (e) {
-                console.error(`[add] onWhatsApp failed for ${num}:`, e.message);
+                failed.push(`${num} (lookup failed)`);
+                continue;
+            }
+            if (!exists) {
+                notOnWA.push(num);
+                continue;
             }
 
-            // 2) Fallback forms
-            if (!jidsToTry.includes(num + '@s.whatsapp.net')) jidsToTry.push(num + '@s.whatsapp.net');
-            if (!jidsToTry.includes(num + '@lid'))            jidsToTry.push(num + '@lid');
-
-            // Try each until one works
-            let added = false;
-            for (const jid of jidsToTry) {
-                try {
-                    await conn.groupParticipantsUpdate(from, [jid], 'add');
-                    console.log(`[add] ✅ added ${num} via ${jid}`);
-                    added = true;
-                    break;
-                } catch (e) {
-                    console.log(`[add] ❌ failed ${jid}: ${e.message}`);
-                }
+            // Try to add
+            try {
+                await conn.groupParticipantsUpdate(from, [pnJid], 'add');
+                added.push(num);
+            } catch (e) {
+                failed.push(`${num} (${e.message})`);
             }
+        }
 
-            if (added) {
-                try {
-                    await conn.sendMessage(from, { react: { text: '➕', key: msg.key } });
-                } catch {}
-            }
+        // ---- Build report ----
+        const lines = [];
+        lines.push(`➕ *ADD REPORT*`);
+        lines.push('');
+        if (added.length)     lines.push(`✅ Added: ${added.join(', ')}`);
+        if (already.length)   lines.push(`👥 Already in group: ${already.join(', ')}`);
+        if (notOnWA.length)   lines.push(`📵 Not on WhatsApp: ${notOnWA.join(', ')}`);
+        if (bannedL.length)   lines.push(`🚫 Banned: ${bannedL.join(', ')}`);
+        if (failed.length)    lines.push(`❌ Failed: ${failed.join(', ')}`);
+
+        await conn.sendMessage(from, { text: fancy(lines.join('\n')) }, { quoted: msg });
+
+        // React if anything succeeded
+        if (added.length) {
+            try {
+                await conn.sendMessage(from, { react: { text: '➕', key: msg.key } });
+            } catch {}
         }
     }
 };
