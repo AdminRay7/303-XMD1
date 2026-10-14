@@ -1,5 +1,41 @@
 require("dotenv").config();
 
+// ============================================
+//   Silence Baileys' known log spam
+// ============================================
+const _origConsoleError = console.error.bind(console);
+const _origConsoleWarn  = console.warn.bind(console);
+
+const _SILENCED_PATTERNS = [
+    'Bad MAC', 'Bad RSA', 'doDecryptWhisperMessage', 'decryptWithSessions',
+    'verifyMAC', 'Session error:Error: Bad MAC',
+    'Failed to decrypt message with any known session',
+    'unpadRandomMax16', 'Closing session',
+    'Closing open session in favor of incoming preKey bundle',
+    'Session already closed', 'Removing old closed session'
+];
+
+function _shouldSilence(args) {
+    const first = args[0];
+    if (typeof first !== 'string') return false;
+    return _SILENCED_PATTERNS.some(p => first.includes(p));
+}
+
+console.error = (...args) => { if (!_shouldSilence(args)) _origConsoleError(...args); };
+console.warn  = (...args) => { if (!_shouldSilence(args)) _origConsoleWarn(...args); };
+
+// ---- In-memory log ring buffer ----
+global._logBuffer = [];
+const _MAX_LOG = 500;
+const _origConsoleLog = console.log.bind(console);
+console.log = (...args) => {
+    const line = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(" ");
+    global._logBuffer.push({ t: Date.now(), msg: line });
+    if (global._logBuffer.length > _MAX_LOG) global._logBuffer.shift();
+    _origConsoleLog(...args);
+};
+
+
 const {
     default: makeWASocket,
     DisconnectReason,
