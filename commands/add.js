@@ -1,5 +1,5 @@
 // commands/add.js
-// Add members to a group — with clear feedback every time.
+// Add members to a group — with simple feedback.
 
 const { fancy } = require('../lib/font');
 const config = require('../config');
@@ -92,7 +92,7 @@ module.exports = {
             }, { quoted: msg });
         }
 
-        // ---- Get current group members (bare numbers) ----
+        // ---- Get current group members ----
         let currentMembers = new Set();
         try {
             const meta = await conn.groupMetadata(from);
@@ -111,13 +111,11 @@ module.exports = {
         const failed   = [];
 
         for (const num of candidates) {
-            // Already in group?
             if (currentMembers.has(num)) {
                 already.push(num);
                 continue;
             }
 
-            // Banned?
             if (await isBanned(userId, num)) {
                 bannedL.push(num);
                 continue;
@@ -125,13 +123,12 @@ module.exports = {
 
             const pnJid = num + '@s.whatsapp.net';
 
-            // Not on WhatsApp?
             let exists = false;
             try {
                 const check = await conn.onWhatsApp(pnJid);
                 exists = !!(check && check.length && check[0].exists);
             } catch (e) {
-                failed.push(`${num} (lookup failed)`);
+                failed.push(num);
                 continue;
             }
             if (!exists) {
@@ -139,28 +136,24 @@ module.exports = {
                 continue;
             }
 
-            // Try to add
             try {
                 await conn.groupParticipantsUpdate(from, [pnJid], 'add');
                 added.push(num);
             } catch (e) {
-                failed.push(`${num} (${e.message})`);
+                failed.push(num);
             }
         }
 
-        // ---- Build report ----
-        const lines = [];
-        lines.push(`➕ *ADD REPORT*`);
-        lines.push('');
-        if (added.length)     lines.push(`✅ Added: ${added.join(', ')}`);
-        if (already.length)   lines.push(`👥 Already in group: ${already.join(', ')}`);
-        if (notOnWA.length)   lines.push(`📵 Not on WhatsApp: ${notOnWA.join(', ')}`);
-        if (bannedL.length)   lines.push(`🚫 Banned: ${bannedL.join(', ')}`);
-        if (failed.length)    lines.push(`❌ Failed: ${failed.join(', ')}`);
+        // ---- Simple reply ----
+        let reply;
+        if (added.length)         reply = '✅ Mission successful';
+        else if (already.length)  reply = '👥 Already in group';
+        else if (notOnWA.length)  reply = '📵 Not on WhatsApp';
+        else if (bannedL.length)  reply = '🚫 Banned';
+        else                      reply = '❌ Failed';
 
-        await conn.sendMessage(from, { text: fancy(lines.join('\n')) }, { quoted: msg });
+        await conn.sendMessage(from, { text: fancy(reply) }, { quoted: msg });
 
-        // React if anything succeeded
         if (added.length) {
             try {
                 await conn.sendMessage(from, { react: { text: '➕', key: msg.key } });
