@@ -1,13 +1,14 @@
 // commands/play.js
-// Search + download song from YouTube via RapidAPI.
+// Search via RapidAPI youtube-v31, download MP3 via RapidAPI youtube-mp36.
 // Usage: .play <song name or youtube URL>
 
 const axios = require('axios');
 const { fancy } = require('../lib/font');
 const config = require('../config');
 
-const RAPIDAPI_KEY  = process.env.RAPIDAPI_KEY  || '';
-const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || 'youtube-mp36.p.rapidapi.com';
+const RAPIDAPI_KEY   = process.env.RAPIDAPI_KEY    || '';
+const RAPIDAPI_HOST  = process.env.RAPIDAPI_HOST   || 'youtube-mp36.p.rapidapi.com';
+const SEARCH_API_HOST = process.env.SEARCH_API_HOST || 'youtube-v31.p.rapidapi.com';
 
 function extractVideoId(input) {
     if (!input) return null;
@@ -18,26 +19,25 @@ function extractVideoId(input) {
 }
 
 async function searchYouTube(query) {
-    const instances = [
-        'https://inv.nadeko.net',
-        'https://invidious.nerdvpn.de',
-        'https://yewtu.be',
-        'https://invidious.privacyredirect.com'
-    ];
-    for (const base of instances) {
-        try {
-            const { data } = await axios.get(
-                `${base}/api/v1/search?q=${encodeURIComponent(query)}&type=video`,
-                { timeout: 8000 }
-            );
-            if (Array.isArray(data) && data.length) {
-                return data[0].videoId;
-            }
-        } catch (e) {
-            continue;
+    const { data } = await axios.get(
+        `https://${SEARCH_API_HOST}/search`,
+        {
+            params: {
+                q: query,
+                part: 'snippet',
+                maxResults: 1,
+                type: 'video'
+            },
+            headers: {
+                'X-RapidAPI-Key': RAPIDAPI_KEY,
+                'X-RapidAPI-Host': SEARCH_API_HOST
+            },
+            timeout: 15000
         }
-    }
-    return null;
+    );
+    const items = data?.items;
+    if (!Array.isArray(items) || !items.length) return null;
+    return items[0].id?.videoId || null;
 }
 
 async function fetchMP3(videoId) {
