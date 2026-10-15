@@ -1,5 +1,5 @@
 // commands/owner.js
-// Show owner + bot info.
+// Send owner as a clickable WhatsApp contact card.
 // Usage: .owner
 
 const { fancy } = require('../lib/font');
@@ -9,26 +9,35 @@ module.exports = {
     name: 'owner',
     category: 'general',
     aliases: ['dev', 'creator'],
-    description: 'Show bot owner contact',
+    description: 'Send the bot owner as a contact card',
     async execute(conn, msg, args, ctx) {
         const { from } = ctx;
 
-        const ownerNumber = String(config.ownerNumber || '').replace(/\D/g, '') || 'N/A';
+        const ownerNumber = String(config.ownerNumber || '').replace(/\D/g, '') || '254794376595';
         const ownerName   = config.ownerName || 'Mr Presenter';
-        const botName     = config.botName || '303-XMD';
 
-        const text =
-`🔑 *${fancy(botName)}* — Owner Info
+        // vCard format — this is what makes WhatsApp render the contact card
+        const vcard =
+`BEGIN:VCARD
+VERSION:3.0
+N:;${ownerName};;;
+FN:${ownerName}
+TEL;type=CELL;type=VOICE;waid=${ownerNumber}:+${ownerNumber}
+END:VCARD`;
 
-👤 *Name:*  ${ownerName}
-📞 *Number:*  wa.me/${ownerNumber}
-
-📢 *Channel:*  Follow for updates
-
-💡 Tap the number above to open a chat.
-
-_${fancy(config.footer || '303-XMD — THE LAST KEY')}_`;
-
-        await conn.sendMessage(from, { text }, { quoted: msg });
+        try {
+            await conn.sendMessage(from, {
+                contacts: {
+                    displayName: ownerName,
+                    contacts: [{ vcard }]
+                }
+            }, { quoted: msg });
+        } catch (e) {
+            console.error('[owner] contact send failed:', e.message);
+            // fallback: plain text with wa.me link
+            await conn.sendMessage(from, {
+                text: fancy(`👤 Owner: ${ownerName}\n📞 wa.me/${ownerNumber}`)
+            }, { quoted: msg });
+        }
     }
 };
