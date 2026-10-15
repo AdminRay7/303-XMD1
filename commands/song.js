@@ -1,12 +1,14 @@
 // commands/song.js
-// Same as .play but sends as a downloadable file.
+// Same as .play but sends as document (downloadable file).
+// Usage: .song <song name or youtube URL>
 
 const axios = require('axios');
 const { fancy } = require('../lib/font');
 const config = require('../config');
 
-const RAPIDAPI_KEY  = process.env.RAPIDAPI_KEY  || '';
-const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || 'youtube-mp36.p.rapidapi.com';
+const RAPIDAPI_KEY   = process.env.RAPIDAPI_KEY    || '';
+const RAPIDAPI_HOST  = process.env.RAPIDAPI_HOST   || 'youtube-mp36.p.rapidapi.com';
+const SEARCH_API_HOST = process.env.SEARCH_API_HOST || 'youtube-v31.p.rapidapi.com';
 
 function extractVideoId(input) {
     if (!input) return null;
@@ -17,13 +19,25 @@ function extractVideoId(input) {
 }
 
 async function searchYouTube(query) {
-    const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
-    const res = await axios.get(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0' },
-        timeout: 10000
-    });
-    const matches = [...res.data.matchAll(/"videoId":"([A-Za-z0-9_-]{11})"/g)];
-    return matches.length ? matches[0][1] : null;
+    const { data } = await axios.get(
+        `https://${SEARCH_API_HOST}/search`,
+        {
+            params: {
+                q: query,
+                part: 'snippet',
+                maxResults: 1,
+                type: 'video'
+            },
+            headers: {
+                'X-RapidAPI-Key': RAPIDAPI_KEY,
+                'X-RapidAPI-Host': SEARCH_API_HOST
+            },
+            timeout: 15000
+        }
+    );
+    const items = data?.items;
+    if (!Array.isArray(items) || !items.length) return null;
+    return items[0].id?.videoId || null;
 }
 
 async function fetchMP3(videoId) {
@@ -46,7 +60,7 @@ async function fetchMP3(videoId) {
 module.exports = {
     name: 'song',
     category: 'download',
-    aliases: ['music2'],
+    aliases: ['music2', 'dl'],
     description: 'Download a song as MP3 file',
     async execute(conn, msg, args, ctx) {
         const { from } = ctx;
@@ -59,7 +73,7 @@ module.exports = {
         }
         if (!RAPIDAPI_KEY) {
             return conn.sendMessage(from, {
-                text: fancy('❌ RAPIDAPI_KEY not set.')
+                text: fancy('❌ RAPIDAPI_KEY not set in Heroku Config Vars.')
             }, { quoted: msg });
         }
 
@@ -71,6 +85,7 @@ module.exports = {
             if (!videoId) throw new Error('No results found');
 
             await conn.sendMessage(from, { text: fancy('⬇️ Downloading...'), edit: wait.key });
+
             const info = await fetchMP3(videoId);
             const sizeMB = (info.filesize / 1024 / 1024).toFixed(2);
             const mins = Math.floor(info.duration / 60);
