@@ -277,14 +277,17 @@ module.exports = async (conn, m, userId = "default") => {
         for (const [, mod] of autoCache) {
             if (typeof mod.onMessage !== 'function') continue;
 
-            let on = false;
-            try {
-                on = await autoToggles.get(userId, mod.toggleKey, isGroup ? from : null, false);
-            } catch (e) {
-                console.error(`[auto] toggle check failed for ${mod.name}:`, e.message);
-                continue;
+            // antimedia manages its own sub-toggles — always invoke it
+            if (mod.toggleKey && mod.name !== 'antimedia') {
+                let on = false;
+                try {
+                    on = await autoToggles.get(userId, mod.toggleKey, isGroup ? from : null, false);
+                } catch (e) {
+                    console.error(`[auto] toggle check failed for ${mod.name}:`, e.message);
+                    continue;
+                }
+                if (!on) continue;
             }
-            if (!on) continue;
 
             try {
                 const r = await mod.onMessage(conn, msg, cmdCtx);
@@ -496,19 +499,11 @@ module.exports.handleGroupUpdate = async (conn, update) => {
     } catch (e) { console.error("group update:", e.message); }
 };
 
-// ============================================================
-//   CALL EVENT HOOK — patched to check the runtime toggle
-// ============================================================
 module.exports.handleCallEvent = async (conn, calls) => {
     for (const [, mod] of autoCache) {
         if (!mod.toggleKey) continue;
-        if (typeof mod.onCall !== 'function') continue;
-        try {
-            const on = await autoToggles.get("default", mod.toggleKey, null, false);
-            if (!on) continue;
-            await mod.onCall(conn, calls);
-        } catch (e) {
-            console.error(`auto/${mod.name}:`, e.message);
+        if (typeof mod.onCall === 'function') {
+            try { await mod.onCall(conn, calls); } catch (e) { console.error(`auto/${mod.name}:`, e.message); }
         }
     }
 };
