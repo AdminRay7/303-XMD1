@@ -1,14 +1,15 @@
 // commands/song.js
-// Same as .play but sends as document (downloadable file).
+// Hardcoded — no env dependency.
 // Usage: .song <song name or youtube URL>
 
 const axios = require('axios');
 const { fancy } = require('../lib/font');
 const config = require('../config');
 
-const RAPIDAPI_KEY   = process.env.RAPIDAPI_KEY    || '';
-const RAPIDAPI_HOST  = process.env.RAPIDAPI_HOST   || 'youtube-mp36.p.rapidapi.com';
-const SEARCH_API_HOST = process.env.SEARCH_API_HOST || 'youtube-v31.p.rapidapi.com';
+// ===== HARDCODED (no env) =====
+const RAPIDAPI_KEY    = 'eae3a83c15msh69a6323638e111fp1cfb10jsna8bbd4863ac0';
+const RAPIDAPI_HOST   = 'youtube-mp36.p.rapidapi.com';
+const SEARCH_API_HOST = 'youtube-v31.p.rapidapi.com';
 
 function extractVideoId(input) {
     if (!input) return null;
@@ -22,12 +23,7 @@ async function searchYouTube(query) {
     const { data } = await axios.get(
         `https://${SEARCH_API_HOST}/search`,
         {
-            params: {
-                q: query,
-                part: 'snippet',
-                maxResults: 1,
-                type: 'video'
-            },
+            params: { q: query, part: 'snippet', maxResults: 1, type: 'video' },
             headers: {
                 'X-RapidAPI-Key': RAPIDAPI_KEY,
                 'X-RapidAPI-Host': SEARCH_API_HOST
@@ -35,22 +31,20 @@ async function searchYouTube(query) {
             timeout: 15000
         }
     );
-    const items = data?.items;
-    if (!Array.isArray(items) || !items.length) return null;
-    return items[0].id?.videoId || null;
+    return data?.items?.[0]?.id?.videoId || null;
 }
 
 async function fetchMP3(videoId) {
-    const { data } = await axios.get(
-        `https://${RAPIDAPI_HOST}/dl?id=${videoId}`,
-        {
-            headers: {
-                'X-RapidAPI-Key': RAPIDAPI_KEY,
-                'X-RapidAPI-Host': RAPIDAPI_HOST
-            },
-            timeout: 30000
-        }
-    );
+    const url = `https://${RAPIDAPI_HOST}/dl?id=${videoId}`;
+    console.log('[song] fetching:', url);
+    const { data } = await axios.get(url, {
+        headers: {
+            'X-RapidAPI-Key': RAPIDAPI_KEY,
+            'X-RapidAPI-Host': RAPIDAPI_HOST
+        },
+        timeout: 30000
+    });
+    console.log('[song] api response:', JSON.stringify(data).slice(0, 200));
     if (data.status !== 'ok' || !data.link) {
         throw new Error(data.msg || 'Download failed');
     }
@@ -71,11 +65,6 @@ module.exports = {
                 text: fancy(`Usage: ${config.prefix}song <song name or youtube URL>`)
             }, { quoted: msg });
         }
-        if (!RAPIDAPI_KEY) {
-            return conn.sendMessage(from, {
-                text: fancy('❌ RAPIDAPI_KEY not set in Heroku Config Vars.')
-            }, { quoted: msg });
-        }
 
         const wait = await conn.sendMessage(from, { text: fancy('🔎 Searching...') }, { quoted: msg });
 
@@ -84,6 +73,7 @@ module.exports = {
             if (!videoId) videoId = await searchYouTube(query);
             if (!videoId) throw new Error('No results found');
 
+            console.log('[song] videoId:', videoId);
             await conn.sendMessage(from, { text: fancy('⬇️ Downloading...'), edit: wait.key });
 
             const info = await fetchMP3(videoId);
@@ -100,17 +90,12 @@ module.exports = {
             }, { quoted: msg });
 
             await conn.sendMessage(from, {
-                text: fancy(
-                    `📄 *${info.title}*\n` +
-                    `⏱️ ${mins}:${String(secs).padStart(2, '0')}  •  📦 ${sizeMB} MB`
-                )
+                text: fancy(`📄 *${info.title}*\n⏱️ ${mins}:${String(secs).padStart(2, '0')}  •  📦 ${sizeMB} MB`)
             }, { quoted: msg });
 
         } catch (e) {
             console.error('[song] error:', e.message);
-            await conn.sendMessage(from, {
-                text: fancy(`❌ Failed: ${e.message}`)
-            }, { quoted: msg });
+            await conn.sendMessage(from, { text: fancy(`❌ Failed: ${e.message}`), edit: wait.key });
         }
     }
 };
