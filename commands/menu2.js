@@ -1,109 +1,152 @@
-// commands/menu2.js
-// Generates a menu with the exact frame layout from the screenshot.
-// Usage: .menu2
-
+// commands/menu.js
 const fs = require('fs-extra');
 const path = require('path');
 const config = require('../config');
 
+// Helper to scan commands
+function getCommands() {
+    const grouped = {};
+    const walk = (dir) => {
+        for (const item of fs.readdirSync(dir)) {
+            const full = path.join(dir, item);
+            if (fs.statSync(full).isDirectory()) { walk(full); continue; }
+            if (!item.endsWith('.js') || item.startsWith('menu')) continue;
+            try {
+                delete require.cache[require.resolve(full)];
+                const mod = require(full);
+                if (!mod || typeof mod.execute !== 'function') continue;
+                const cat = (mod.category || 'general').toLowerCase();
+                if (!grouped[cat]) grouped[cat] = [];
+                grouped[cat].push(mod.name);
+            } catch {}
+        }
+    };
+    try { walk(path.join(__dirname)); } catch {}
+    return grouped;
+}
+
+// Map categories to emojis
+const CATEGORY_EMOJIS = {
+    general: '📌',
+    admin: '🛡️',
+    group: '👥',
+    fun: '🎮',
+    tools: '🔧',
+    media: '🖼️',
+    download: '⬇️',
+    auto: '⚙️',
+    owner: '👑',
+    islamic: '⚡',
+    ai: '🤖'
+};
+
 module.exports = {
-    name: 'menu2',
+    name: 'menu',
     category: 'general',
-    aliases: ['m2'],
-    description: 'Alternative styled menu',
+    aliases: ['help'],
+    description: 'Interactive categorized menu',
     async execute(conn, msg, args, ctx) {
         const { from } = ctx;
+        const grouped = getCommands();
         
-        // ---- 1. Calculate Runtime ----
-        const uptime = process.uptime();
-        const h = Math.floor(uptime / 3600);
-        const m = Math.floor((uptime % 3600) / 60);
-        const s = Math.floor(uptime % 60);
-        const runtimeStr = `${h}h ${m}m ${s}s`;
+        // Sort categories based on this order, then put the rest at the end
+        const order = ['general', 'admin', 'group', 'fun', 'tools', 'media', 'download', 'auto', 'owner', 'islamic', 'ai'];
+        const activeCats = Object.keys(grouped).sort((a, b) => {
+            let iA = order.indexOf(a), iB = order.indexOf(b);
+            if (iA === -1) iA = 99;
+            if (iB === -1) iB = 99;
+            return iA - iB;
+        });
 
-        // ---- 2. Count Commands ----
-        let cmdCount = 0;
-        const cmdDir = path.join(__dirname);
-        const walk = (dir) => {
-            for (const item of fs.readdirSync(dir)) {
-                const full = path.join(dir, item);
-                if (fs.statSync(full).isDirectory()) { walk(full); continue; }
-                if (item.endsWith('.js')) cmdCount++;
-            }
-        };
-        try { walk(cmdDir); } catch {}
+        // ---- Image Paths ----
+        const menuImg = path.join(__dirname, '..', 'Assets', 'menu.jpg');
+        const hasMenuImg = fs.existsSync(menuImg);
 
-        // ---- 3. Get Bot Info ----
-        const ownerName = config.ownerName || "mr presenter";
-        const prefix = config.prefix || ".";
-        const mode = config.workMode || "public";
-        const version = config.version || "2.0.0";
+        // ---- 1. Build Main Menu ----
+        let text = `╭─〔 🔑 *303-XMD MENU* 〕\n│\n`;
+        text += `│ 👤 OWNER : ${config.ownerName || 'Mr Presenter'}\n`;
+        text += `│ ⚡ PREFIX : [ ${config.prefix || '.'} ]\n`;
+        text += `│\n│ *Please reply with a number:*\n│\n`;
 
-        // ---- 4. Build the Header Frame ----
-        // Matches the exact header from the screenshot
-        let text = `◆ ──── ✦ 303-XMD MULTI-DEVICE ✦ ──── ◆\n\n`;
-        
-        text += `┏━━━━━━━━━━━━━━━「 👑 USER INFO 」━━━━━━━━━━━━━━━◇\n`;
-        text += `┃ 🚀 OWNER: ${ownerName.toUpperCase()}\n`;
-        text += `┃ 📂 COMMANDS: ${cmdCount}\n`;
-        text += `┃ ⏱️ RUNTIME: ${runtimeStr}\n`;
-        text += `┃ ⚡ PREFIX: [ ${prefix} ]\n`;
-        text += `┃ 🔒 MODE: ${mode}\n`;
-        text += `┃ 🏷️ VERSION: ${version} BETA\n`;
-        text += `┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◇\n\n`;
+        activeCats.forEach((cat, index) => {
+            const count = grouped[cat].length;
+            const emoji = CATEGORY_EMOJIS[cat] || '📁';
+            text += `│ ${index + 1}. ${emoji} ${cat.toUpperCase()} (${count})\n`;
+        });
 
-        // ---- 5. Build Categories ----
-        const grouped = {};
-        
-        const load = (dir) => {
-            for (const item of fs.readdirSync(dir)) {
-                const full = path.join(dir, item);
-                if (fs.statSync(full).isDirectory()) { load(full); continue; }
-                if (!item.endsWith('.js') || item === 'menu.js' || item === 'menu2.js') continue;
-                try {
-                    delete require.cache[require.resolve(full)];
-                    const mod = require(full);
-                    if (!mod || typeof mod.execute !== 'function') continue;
-                    const cat = (mod.category || 'general').toLowerCase();
-                    if (!grouped[cat]) grouped[cat] = [];
-                    grouped[cat].push(mod.name);
-                } catch {}
-            }
-        };
-        load(cmdDir);
+        text += `│\n╰──────────────────────\n\n`;
+        text += `_Reply with the number (e.g., 1) to view commands._`;
 
-        const displayOrder = ['general', 'admin', 'group', 'fun', 'tools', 'media', 'download', 'auto'];
+        // Send with menu image as header
+        const sent = hasMenuImg
+            ? await conn.sendMessage(from, { image: fs.readFileSync(menuImg), caption: text }, { quoted: msg })
+            : await conn.sendMessage(from, { text }, { quoted: msg });
 
-        for (const cat of displayOrder) {
-            const items = grouped[cat];
-            if (!items || !items.length) continue;
-
-            items.sort();
-            const catTitle = cat.toUpperCase();
-
-            text += `┏━━━━━━━━━━━━━━━「 ⚡ ${catTitle} 」━━━━━━━━━━━━━━━◇\n`;
-            for (const cmd of items) {
-                // Uses the exact diamond bullet and UPPERCASE from screenshot
-                text += `┃ ◇ ${cmd.toUpperCase()}\n`;
-            }
-            text += `┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◇\n\n`;
-        }
-
-        // Any other categories
-        for (const cat of Object.keys(grouped)) {
-            if (displayOrder.includes(cat)) continue;
-            const items = grouped[cat];
-            if (!items || !items.length) continue;
+        // ---- 2. Set up Listener ----
+        const listener = async (update) => {
+            const m = update.messages[0];
+            if (!m.message) return;
             
-            items.sort();
-            text += `┏━━━━━━━━━━━━━━━「 ⚡ ${cat.toUpperCase()} 」━━━━━━━━━━━━━━━◇\n`;
-            for (const cmd of items) {
-                text += `┃ ◇ ${cmd.toUpperCase()}\n`;
-            }
-            text += `┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◇\n\n`;
-        }
+            const body = m.message.conversation || m.message.extendedTextMessage?.text || '';
+            const sender = m.key.participant || m.key.remoteJid;
+            const ctxSender = ctx.sender;
 
-        // ---- 6. Send ----
-        await conn.sendMessage(from, { text }, { quoted: msg });
+            if (sender !== ctxSender || m.key.remoteJid !== from) return;
+
+            const choice = parseInt(body.trim());
+            
+            if (isNaN(choice) || choice < 0 || choice > activeCats.length) return;
+
+            conn.ev.off('messages.upsert', listener);
+
+            let editText = '';
+
+            if (choice === 0) {
+                editText = text;
+            } else {
+                const selectedCat = activeCats[choice - 1];
+                const items = grouped[selectedCat].sort();
+                const emoji = CATEGORY_EMOJIS[selectedCat] || '📁';
+                
+                // Add the emoji to the category title
+                editText = `╭─〔 ${emoji} *${selectedCat.toUpperCase()}* 〕\n│\n`;
+                for (const cmd of items) {
+                    editText += `│ ◇ ${config.prefix}${cmd}\n`;
+                }
+                editText += `│\n│ 0. ⬅️ BACK TO MENU\n│\n`;
+                editText += `╰──────────────────────\n\n`;
+                editText += `_Reply 0 to go back._`;
+            }
+
+            // Edit the original message
+            try {
+                await conn.sendMessage(from, { text: editText, edit: sent.key });
+            } catch (e) {
+                console.error('[menu] edit failed:', e.message);
+            }
+
+            if (choice !== 0) {
+                setupListener();
+            }
+        };
+
+        const setupListener = () => {
+            conn.ev.on('messages.upsert', async (update) => {
+                const m = update.messages[0];
+                if (!m.message) return;
+                const body = m.message.conversation || m.message.extendedTextMessage?.text || '';
+                const sender = m.key.participant || m.key.remoteJid;
+                if (sender !== ctxSender || m.key.remoteJid !== from) return;
+
+                if (body.trim() === '0') {
+                    conn.ev.off('messages.upsert', setupListener); 
+                    hasMenuImg
+                        ? await conn.sendMessage(from, { image: fs.readFileSync(menuImg), caption: text }, { quoted: m })
+                        : await conn.sendMessage(from, { text }, { quoted: m });
+                }
+            });
+        };
+
+        conn.ev.on('messages.upsert', listener);
     }
 };
