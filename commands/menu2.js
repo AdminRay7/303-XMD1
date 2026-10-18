@@ -1,4 +1,4 @@
-// commands/menu.js
+// commands/menu2.js
 const fs = require('fs-extra');
 const path = require('path');
 const config = require('../config');
@@ -41,9 +41,9 @@ const CATEGORY_EMOJIS = {
 };
 
 module.exports = {
-    name: 'menu',
+    name: 'menu2',
     category: 'general',
-    aliases: ['help'],
+    aliases: ['m2'],
     description: 'Interactive categorized menu',
     async execute(conn, msg, args, ctx) {
         const { from } = ctx;
@@ -122,7 +122,7 @@ module.exports = {
             try {
                 await conn.sendMessage(from, { text: editText, edit: sent.key });
             } catch (e) {
-                console.error('[menu] edit failed:', e.message);
+                console.error('[menu2] edit failed:', e.message);
             }
 
             if (choice !== 0) {
