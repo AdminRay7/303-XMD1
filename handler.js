@@ -277,7 +277,6 @@ module.exports = async (conn, m, userId = "default") => {
         for (const [, mod] of autoCache) {
             if (typeof mod.onMessage !== 'function') continue;
 
-            // antimedia manages its own sub-toggles — always invoke it
             if (mod.toggleKey && mod.name !== 'antimedia') {
                 let on = false;
                 try {
@@ -377,6 +376,14 @@ module.exports = async (conn, m, userId = "default") => {
                 else { user.messageCount += 1; user.lastActive = new Date(); }
                 scheduleUserSave(user);
             } catch {}
+        }
+
+        // ============================================================
+        //   MENU LISTENER FIX
+        //   Ignore plain numbers (0-9) so menus can catch them
+        // ============================================================
+        if (!isCmd && /^[0-9]$/.test((body || '').trim())) {
+            return;
         }
 
         // ================= COMMANDS =================
