@@ -1,5 +1,5 @@
 // commands/menu2.js
-// Generates a menu with a double-line ASCII frame layout.
+// Generates a menu with the exact frame layout from the screenshot.
 // Usage: .menu2
 
 const fs = require('fs-extra');
@@ -40,17 +40,17 @@ module.exports = {
         const version = config.version || "2.0.0";
 
         // ---- 4. Build the Header Frame ----
-        let text = `◆ ──── ✦ KAMRAN-MD MULTI-DEVICE ✦ ──── ◆\n\n`;
+        // Matches the exact header from the screenshot
+        let text = `◆ ──── ✦ 303-XMD MULTI-DEVICE ✦ ──── ◆\n\n`;
         
-        // DOUBLE LINE FRAME
-        text += `╔═══════════════「 👑 USER INFO 」═══════════════◇\n`;
-        text += `║ 🚀 OWNER: ${ownerName.toUpperCase()}\n`;
-        text += `║ 📂 COMMANDS: ${cmdCount}\n`;
-        text += `║ ⏱️ RUNTIME: ${runtimeStr}\n`;
-        text += `║ ⚡ PREFIX: [ ${prefix} ]\n`;
-        text += `║ 🔒 MODE: ${mode}\n`;
-        text += `║ 🏷️ VERSION: ${version} BETA\n`;
-        text += `╚═══════════════════════════════════════════════◇\n\n`;
+        text += `┏━━━━━━━━━━━━━━━「 👑 USER INFO 」━━━━━━━━━━━━━━━◇\n`;
+        text += `┃ 🚀 OWNER: ${ownerName.toUpperCase()}\n`;
+        text += `┃ 📂 COMMANDS: ${cmdCount}\n`;
+        text += `┃ ⏱️ RUNTIME: ${runtimeStr}\n`;
+        text += `┃ ⚡ PREFIX: [ ${prefix} ]\n`;
+        text += `┃ 🔒 MODE: ${mode}\n`;
+        text += `┃ 🏷️ VERSION: ${version} BETA\n`;
+        text += `┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◇\n\n`;
 
         // ---- 5. Build Categories ----
         const grouped = {};
@@ -81,12 +81,12 @@ module.exports = {
             items.sort();
             const catTitle = cat.toUpperCase();
 
-            // DOUBLE LINE FRAME
-            text += `╔═══════════════「 ⚡ ${catTitle} 」═══════════════◇\n`;
+            text += `┏━━━━━━━━━━━━━━━「 ⚡ ${catTitle} 」━━━━━━━━━━━━━━━◇\n`;
             for (const cmd of items) {
-                text += `║ ◇ ${cmd.toUpperCase()}\n`;
+                // Uses the exact diamond bullet and UPPERCASE from screenshot
+                text += `┃ ◇ ${cmd.toUpperCase()}\n`;
             }
-            text += `╚═══════════════════════════════════════════════◇\n\n`;
+            text += `┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◇\n\n`;
         }
 
         // Any other categories
@@ -96,11 +96,11 @@ module.exports = {
             if (!items || !items.length) continue;
             
             items.sort();
-            text += `╔═══════════════「 ⚡ ${cat.toUpperCase()} 」═══════════════◇\n`;
+            text += `┏━━━━━━━━━━━━━━━「 ⚡ ${cat.toUpperCase()} 」━━━━━━━━━━━━━━━◇\n`;
             for (const cmd of items) {
-                text += `║ ◇ ${cmd.toUpperCase()}\n`;
+                text += `┃ ◇ ${cmd.toUpperCase()}\n`;
             }
-            text += `╚═══════════════════════════════════════════════◇\n\n`;
+            text += `┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◇\n\n`;
         }
 
         // ---- 6. Send ----
