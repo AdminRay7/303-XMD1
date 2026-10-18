@@ -3,7 +3,6 @@ const fs = require('fs-extra');
 const path = require('path');
 const config = require('../config');
 
-// Helper to scan commands
 function getCommands() {
     const grouped = {};
     const walk = (dir) => {
@@ -25,19 +24,9 @@ function getCommands() {
     return grouped;
 }
 
-// Map categories to emojis
 const CATEGORY_EMOJIS = {
-    general: '📌',
-    admin: '🛡️',
-    group: '👥',
-    fun: '🎮',
-    tools: '🔧',
-    media: '🖼️',
-    download: '⬇️',
-    auto: '⚙️',
-    owner: '👑',
-    islamic: '⚡',
-    ai: '🤖'
+    general: '📌', admin: '🛡️', group: '👥', fun: '🎮', tools: '🔧',
+    media: '🖼️', download: '⬇️', auto: '⚙️', owner: '👑', islamic: '⚡', ai: '🤖'
 };
 
 module.exports = {
@@ -49,7 +38,6 @@ module.exports = {
         const { from } = ctx;
         const grouped = getCommands();
         
-        // Sort categories based on this order, then put the rest at the end
         const order = ['general', 'admin', 'group', 'fun', 'tools', 'media', 'download', 'auto', 'owner', 'islamic', 'ai'];
         const activeCats = Object.keys(grouped).sort((a, b) => {
             let iA = order.indexOf(a), iB = order.indexOf(b);
@@ -58,11 +46,10 @@ module.exports = {
             return iA - iB;
         });
 
-        // ---- Image Paths ----
         const menuImg = path.join(__dirname, '..', 'Assets', 'menu.jpg');
         const hasMenuImg = fs.existsSync(menuImg);
 
-        // ---- 1. Build Main Menu ----
+        // Build main menu text
         let text = `╭─〔 🔑 *303-XMD MENU* 〕\n│\n`;
         text += `│ 👤 OWNER : ${config.ownerName || 'Mr Presenter'}\n`;
         text += `│ ⚡ PREFIX : [ ${config.prefix || '.'} ]\n`;
@@ -77,74 +64,71 @@ module.exports = {
         text += `│\n╰──────────────────────\n\n`;
         text += `_Reply with the number (e.g., 1) to view commands._`;
 
-        // Send with menu image as header
+        // 1. Send main menu (with image)
         const sent = hasMenuImg
             ? await conn.sendMessage(from, { image: fs.readFileSync(menuImg), caption: text }, { quoted: msg })
             : await conn.sendMessage(from, { text }, { quoted: msg });
 
-        // ---- 2. Set up Listener ----
+        // 2. Listen for reply
         const listener = async (update) => {
             const m = update.messages[0];
             if (!m.message) return;
             
             const body = m.message.conversation || m.message.extendedTextMessage?.text || '';
             const sender = m.key.participant || m.key.remoteJid;
-            const ctxSender = ctx.sender;
-
-            if (sender !== ctxSender || m.key.remoteJid !== from) return;
+            
+            // Only listen to the person who ran the command
+            if (sender !== ctx.sender || m.key.remoteJid !== from) return;
 
             const choice = parseInt(body.trim());
-            
             if (isNaN(choice) || choice < 0 || choice > activeCats.length) return;
 
+            // Stop listening
             conn.ev.off('messages.upsert', listener);
 
-            let editText = '';
-
             if (choice === 0) {
-                editText = text;
+                // Resend main menu
+                hasMenuImg
+                    ? await conn.sendMessage(from, { image: fs.readFileSync(menuImg), caption: text }, { quoted: m })
+                    : await conn.sendMessage(from, { text }, { quoted: m });
+                
+                // Re-attach listener
+                conn.ev.on('messages.upsert', listener);
             } else {
                 const selectedCat = activeCats[choice - 1];
                 const items = grouped[selectedCat].sort();
                 const emoji = CATEGORY_EMOJIS[selectedCat] || '📁';
                 
-                // Add the emoji to the category title
-                editText = `╭─〔 ${emoji} *${selectedCat.toUpperCase()}* 〕\n│\n`;
+                let editText = `╭─〔 ${emoji} *${selectedCat.toUpperCase()}* 〕\n│\n`;
                 for (const cmd of items) {
                     editText += `│ ◇ ${config.prefix}${cmd}\n`;
                 }
                 editText += `│\n│ 0. ⬅️ BACK TO MENU\n│\n`;
                 editText += `╰──────────────────────\n\n`;
                 editText += `_Reply 0 to go back._`;
+
+                // SEND AS NEW MESSAGE (instead of editing)
+                await conn.sendMessage(from, { text: editText }, { quoted: m });
+
+                // Listen for "0" to go back
+                const backListener = async (upd) => {
+                    const m2 = upd.messages[0];
+                    if (!m2.message) return;
+                    const b2 = m2.message.conversation || m2.message.extendedTextMessage?.text || '';
+                    const s2 = m2.key.participant || m2.key.remoteJid;
+                    if (s2 !== ctx.sender || m2.key.remoteJid !== from) return;
+
+                    if (b2.trim() === '0') {
+                        conn.ev.off('messages.upsert', backListener);
+                        hasMenuImg
+                            ? await conn.sendMessage(from, { image: fs.readFileSync(menuImg), caption: text }, { quoted: m2 })
+                            : await conn.sendMessage(from, { text }, { quoted: m2 });
+                        // Re-attach main listener
+                        conn.ev.on('messages.upsert', listener);
+                    }
+                };
+                conn.ev.on('messages.upsert', backListener);
             }
-
-            // Edit the original message
-            try {
-                await conn.sendMessage(from, { text: editText, edit: sent.key });
-            } catch (e) {
-                console.error('[menu2] edit failed:', e.message);
-            }
-
-            if (choice !== 0) {
-                setupListener();
-            }
-        };
-
-        const setupListener = () => {
-            conn.ev.on('messages.upsert', async (update) => {
-                const m = update.messages[0];
-                if (!m.message) return;
-                const body = m.message.conversation || m.message.extendedTextMessage?.text || '';
-                const sender = m.key.participant || m.key.remoteJid;
-                if (sender !== ctxSender || m.key.remoteJid !== from) return;
-
-                if (body.trim() === '0') {
-                    conn.ev.off('messages.upsert', setupListener); 
-                    hasMenuImg
-                        ? await conn.sendMessage(from, { image: fs.readFileSync(menuImg), caption: text }, { quoted: m })
-                        : await conn.sendMessage(from, { text }, { quoted: m });
-                }
-            });
         };
 
         conn.ev.on('messages.upsert', listener);
