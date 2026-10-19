@@ -477,7 +477,21 @@ module.exports = async (conn, m, userId = "default") => {
                     // 3. Reply with the AI response
                     if (reply) {
                         const finalReply = isGroup ? humanChat.humanize(reply) : reply;
-                        await conn.sendMessage(from, { text: finalReply }, { quoted: msg });
+                        
+                        // Convert text to speech
+                        const audioBuffer = await aiChat.textToSpeech(finalReply);
+                        
+                        if (audioBuffer) {
+                            // Send as a voice note (ptt: true)
+                            await conn.sendMessage(from, { 
+                                audio: audioBuffer, 
+                                mimetype: 'audio/mp4', 
+                                ptt: true 
+                            }, { quoted: msg });
+                        } else {
+                            // Fallback to text if TTS fails
+                            await conn.sendMessage(from, { text: finalReply }, { quoted: msg });
+                        }
                     }
                 } catch (e) {
                     console.error("[voice-ai] error:", e.message);
