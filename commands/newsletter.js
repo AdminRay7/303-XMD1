@@ -21,7 +21,8 @@ module.exports = {
             try {
                 const meta = await conn.newsletterMetadata('invite', code);
                 await conn.sendMessage(from, {
-                    text: fancy(`📢 *Newsletter JID:*\n\`${meta.id}\``),
+                    // Removed backticks, using normal text
+                    text: `📢 Newsletter JID:\n${meta.id}`,
                     edit: wait.key
                 });
             } catch (e) {
@@ -39,7 +40,7 @@ module.exports = {
         // =========================================================
         if (isGroup) {
             return conn.sendMessage(from, { 
-                text: fancy(`👥 *Group JID:*\n\`${from}\``) 
+                text: `👥 Group JID:\n${from}` 
             }, { quoted: msg });
         }
 
@@ -47,7 +48,7 @@ module.exports = {
         // 3. IN A DM (User JID)
         // =========================================================
         return conn.sendMessage(from, { 
-            text: fancy(`👤 *User JID:*\n\`${sender}\``) 
+            text: `👤 User JID:\n${sender}` 
         }, { quoted: msg });
     }
 };
