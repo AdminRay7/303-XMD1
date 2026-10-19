@@ -443,6 +443,48 @@ module.exports = async (conn, m, userId = "default") => {
             const sysPrompt = config.aiSystemPrompt
                 || "You are a normal person chatting on WhatsApp. Keep replies short, casual, human. Use emojis occasionally. Never mention you're an AI. Match the language the person uses. No markdown, no bullet points.";
 
+            // ---------- VOICE NOTE AI ----------
+            if (type === "audioMessage" && msg.message.audioMessage?.ptt) {
+                try {
+                    if (config.autoTyping) { try { await conn.sendPresenceUpdate('recording', from); } catch {} }
+                    
+                    const stream = await downloadContentFromMessage(msg.message.audioMessage, "audio");
+                    const chunks = [];
+                    let total = 0;
+                    for await (const c of stream) {
+                        total += c.length;
+                        if (total > 5 * 1024 * 1024) throw new Error("Audio > 5MB");
+                        chunks.push(c);
+                    }
+                    const buffer = Buffer.concat(chunks);
+
+                    // 1. Transcribe using Whisper
+                    const transcript = await aiChat.transcribeAudio(buffer);
+                    if (!transcript) throw new Error("Could not understand audio");
+
+                    console.log(`[voice-ai] Transcribed: "${transcript}"`);
+
+                    // 2. Pass the text to the chat AI
+                    let prompt = transcript;
+                    if (isGroup) {
+                        humanChat.pushContext(from, pushname || sender.split("@")[0], transcript);
+                        const context = humanChat.getContext(from, 15);
+                        if (context) prompt = `You are chatting in a WhatsApp group. Recent messages:\n\n${context}\n\nReply naturally to the latest message. Short and casual. Match the language.`;
+                    }
+
+                    const reply = await aiChat.askAI(prompt, userId, sysPrompt);
+
+                    // 3. Reply with the AI response
+                    if (reply) {
+                        const finalReply = isGroup ? humanChat.humanize(reply) : reply;
+                        await conn.sendMessage(from, { text: finalReply }, { quoted: msg });
+                    }
+                } catch (e) {
+                    console.error("[voice-ai] error:", e.message);
+                }
+                return;
+            }
+
             if (type === "imageMessage") {
                 try {
                     const stream = await downloadContentFromMessage(msg.message.imageMessage, "image");
