@@ -20,11 +20,11 @@ module.exports = {
         // Edit the message with the result
         try {
             await conn.sendMessage(from, { 
-                text: `𝐏𝛐𝛈𝐠! ⚡ 𝛔𝛈𝐠𝐞𝐞𝐝: ${latency} ms`, 
+                text: `𝐏𝛐𝛈𝐠! ⚡ 𝛒𝛔𝛈𝐠𝐞𝐞𝐝: ${latency} ms`, 
                 edit: sent.key 
             });
         } catch (e) {
-            await conn.sendMessage(from, { text: `𝐏𝛐𝛈𝐠! ⚡ 𝛔𝛈𝐠𝐞𝐞𝐝: ${latency} ms` }, { quoted: msg });
+            await conn.sendMessage(from, { text: `𝐏𝛐𝛈𝐠! ⚡ 𝛒𝛔𝛈𝐠𝐞𝐞𝐝: ${latency} ms` }, { quoted: msg });
         }
     }
 };
