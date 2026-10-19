@@ -1,6 +1,6 @@
 // commands/edit.js
 // Advanced Image Editing using ModelsLab (img2img)
-// Usage: (reply to a photo) .edit make it wear a red suit
+// Usage: Reply to a photo with .edit <prompt>
 
 const axios = require('axios');
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
@@ -15,46 +15,49 @@ module.exports = {
     async execute(conn, msg, args, ctx) {
         const { from } = ctx;
         const prompt = args.join(' ');
-        const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        
+        if (!prompt) {
+            return conn.sendMessage(from, { text: fancy('❌ Please provide a prompt (e.g., .edit red suit)') }, { quoted: msg });
+        }
 
-        // Get key from config
         const apiKey = config.modelslabKey;
-
         if (!apiKey) {
             return conn.sendMessage(from, { text: fancy('❌ ModelsLab API key is missing.') }, { quoted: msg });
         }
 
+        // --- FIX: Safely find the replied message context ---
+        const msgContext = msg.message?.extendedTextMessage?.contextInfo;
+        const quoted = msgContext?.quotedMessage;
+
         if (!quoted || !quoted.imageMessage) {
-            return conn.sendMessage(from, { text: fancy('❌ Reply to a photo with .edit <prompt>') }, { quoted: msg });
-        }
-        if (!prompt) {
-            return conn.sendMessage(from, { text: fancy('❌ Please provide a prompt (e.g., .edit red suit)') }, { quoted: msg });
+            return conn.sendMessage(from, { text: fancy('❌ Please *swipe/reply* directly to a photo and type .edit <prompt>') }, { quoted: msg });
         }
 
         const wait = await conn.sendMessage(from, { text: fancy('🎨 Editing image with AI... (20-30s)') }, { quoted: msg });
 
         try {
-            // 1. Download the replied image
             const quotedMsg = {
                 key: { 
                     remoteJid: from, 
                     fromMe: false, 
-                    id: msg.message.extendedTextMessage.contextInfo.stanzaId, 
-                    participant: msg.message.extendedTextMessage.contextInfo.participant 
+                    id: msgContext.stanzaId, // Safely grabbed above
+                    participant: msgContext.participant 
                 },
                 message: quoted
             };
+            
+            // Download the image
             const buffer = await downloadMediaMessage(quotedMsg, 'buffer', {}, { logger: console });
             const base64Image = buffer.toString('base64');
 
-            // 2. Send to ModelsLab Img2Img API
+            // Send to ModelsLab
             const payload = {
                 key: apiKey,
-                model_id: "sdxl", // SDXL is very good at clothing and detail
+                model_id: "sdxl",
                 prompt: `photorealistic, high quality, 8k, ${prompt}`,
                 negative_prompt: "deformed, distorted, ugly, bad anatomy, extra limbs, bad hands, low quality",
                 init_image: base64Image,
-                strength: 0.6, // 0.6 keeps the face mostly the same but changes clothes
+                strength: 0.55, // 0.55 keeps the face identical but changes the clothes
                 width: "1024",
                 height: "1024",
                 samples: "1",
@@ -72,12 +75,11 @@ module.exports = {
                 throw new Error(response.data.message || "ModelsLab API Error");
             }
 
-            // 3. Get the generated image URL and download it
+            // Get and send the edited image
             const outputUrl = response.data.output[0];
             const imageRes = await axios.get(outputUrl, { responseType: 'arraybuffer' });
             const editedBuffer = Buffer.from(imageRes.data, 'binary');
 
-            // 4. Send result back to WhatsApp
             await conn.sendMessage(from, { 
                 image: editedBuffer, 
                 caption: fancy(`🎨 *Edited:* ${prompt}`) 
