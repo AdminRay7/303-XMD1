@@ -387,6 +387,7 @@ app.get("/api-docs.html",   (req, res) => servePage(res, "api-docs.html"));
 app.get("/pair",            (req, res) => servePage(res, "pair.html"));
 app.get("/mobile",          (req, res) => servePage(res, "app.html"));
 app.get("/app",             (req, res) => servePage(res, "app.html"));
+app.get("/store", (req, res) => servePage(res, "store.html"));
 app.get("/manifest.json",   (req, res) => {
     const p = path.join(__dirname, "public", "manifest.json");
     if (!fs.existsSync(p)) return res.status(404).send("manifest.json missing");
