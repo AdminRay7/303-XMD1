@@ -21,7 +21,6 @@ module.exports = {
             try {
                 const meta = await conn.newsletterMetadata('invite', code);
                 await conn.sendMessage(from, {
-                    // Removed backticks, using normal text
                     text: `📢 Newsletter JID:\n${meta.id}`,
                     edit: wait.key
                 });
@@ -45,10 +44,21 @@ module.exports = {
         }
 
         // =========================================================
-        // 3. IN A DM (User JID)
+        // 3. IN A DM (User JID - Convert LID to Real Number)
         // =========================================================
-        return conn.sendMessage(from, { 
-            text: `👤 User JID:\n${sender}` 
-        }, { quoted: msg });
+        try {
+            // Baileys has a built-in method to map @lid back to @s.whatsapp.net
+            const pnJid = await conn.getJidFromLid(sender);
+            const finalJid = pnJid || sender; // Fallback to sender if mapping fails
+            
+            return conn.sendMessage(from, { 
+                text: `👤 User JID:\n${finalJid}` 
+            }, { quoted: msg });
+        } catch (e) {
+            // Fallback if the mapping method fails
+            return conn.sendMessage(from, { 
+                text: `👤 User JID:\n${sender}` 
+            }, { quoted: msg });
+        }
     }
 };
