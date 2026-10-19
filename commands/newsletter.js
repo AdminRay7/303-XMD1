@@ -4,19 +4,15 @@ const config = require('../config');
 
 module.exports = {
     name: 'newsletter',
-    category: 'admin',
-    aliases: ['nl', 'getjid'],
+    category: 'general',
+    aliases: ['jid', 'getjid'],
     description: 'Get JID of chat, user, or newsletter link',
     async execute(conn, msg, args, ctx) {
-        const { from, isOwner, isGroup, sender } = ctx;
-
-        // Only owner can use this
-        if (!isOwner) return conn.sendMessage(from, { text: fancy('❌ Owner only.') });
-
+        const { from, isGroup, sender } = ctx;
         const input = args[0];
 
         // =========================================================
-        // 1. IF LINK PROVIDED (Newsletter JID)
+        // 1. WITH LINK (Newsletter JID)
         // =========================================================
         if (input && input.includes('whatsapp.com/channel/')) {
             const code = input.split('whatsapp.com/channel/')[1].split('?')[0];
@@ -25,7 +21,7 @@ module.exports = {
             try {
                 const meta = await conn.newsletterMetadata('invite', code);
                 await conn.sendMessage(from, {
-                    text: fancy(`🆔 \`${meta.id}\``),
+                    text: fancy(`📢 *Newsletter JID:*\n\`${meta.id}\``),
                     edit: wait.key
                 });
             } catch (e) {
@@ -39,7 +35,7 @@ module.exports = {
         }
 
         // =========================================================
-        // 2. IF IN GROUP (Group JID)
+        // 2. IN A GROUP (Group JID)
         // =========================================================
         if (isGroup) {
             return conn.sendMessage(from, { 
@@ -48,7 +44,7 @@ module.exports = {
         }
 
         // =========================================================
-        // 3. IF IN DM (User's JID)
+        // 3. IN A DM (User JID)
         // =========================================================
         return conn.sendMessage(from, { 
             text: fancy(`👤 *User JID:*\n\`${sender}\``) 
