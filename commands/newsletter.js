@@ -8,7 +8,7 @@ module.exports = {
     aliases: ['jid', 'getjid'],
     description: 'Get JID of chat, user, or newsletter link',
     async execute(conn, msg, args, ctx) {
-        const { from, isGroup, sender } = ctx;
+        const { from, isGroup } = ctx;
         const input = args[0];
 
         // =========================================================
@@ -44,21 +44,21 @@ module.exports = {
         }
 
         // =========================================================
-        // 3. IN A DM (User JID - Convert LID to Real Number)
+        // 3. IN A DM (Direct Phone Number Extraction)
         // =========================================================
-        try {
-            // Baileys has a built-in method to map @lid back to @s.whatsapp.net
-            const pnJid = await conn.getJidFromLid(sender);
-            const finalJid = pnJid || sender; // Fallback to sender if mapping fails
-            
-            return conn.sendMessage(from, { 
-                text: `👤 User JID:\n${finalJid}` 
-            }, { quoted: msg });
-        } catch (e) {
-            // Fallback if the mapping method fails
-            return conn.sendMessage(from, { 
-                text: `👤 User JID:\n${sender}` 
-            }, { quoted: msg });
+        
+        // WhatsApp stores the real phone JID in these specific fields.
+        // If they exist, we use them. If not, we fall back to the standard sender ID.
+        let realJid = msg.key.senderPn || msg.key.participantPn || msg.key.remoteJid;
+
+        // If somehow it still comes back as @lid, we clean it up
+        if (realJid && realJid.includes('@lid')) {
+             // Force attempt to get from the message context
+             realJid = msg.key.remoteJid; 
         }
+
+        return conn.sendMessage(from, { 
+            text: `👤 User JID:\n${realJid}` 
+        }, { quoted: msg });
     }
 };
