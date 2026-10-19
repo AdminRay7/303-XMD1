@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Buy Credits | 303-XMD</title>
+<meta name="theme-color" content="#00d4ff">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💳</text></svg>">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/theme.css">
+<style>
+body.theme-store { --g1:#00d4ff; --g2:#7b2ff7; }
+.pkg-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:24px; }
+.pkg-card {
+    background:var(--panel); border:1px solid var(--border); border-radius:16px;
+    padding:22px 18px; text-align:center; cursor:pointer; transition:.2s;
+}
+.pkg-card:hover { transform:translateY(-3px); border-color:var(--g1); box-shadow:0 8px 30px rgba(0,212,255,.15); }
+.pkg-card .credits { font-size:32px; font-weight:800; background:linear-gradient(135deg,var(--g1),var(--g2)); -webkit-background-clip:text; color:transparent; }
+.pkg-card .amount { font-size:20px; font-weight:700; color:#fff; margin-top:14px; }
+.pkg-card .currency { font-size:11px; color:var(--muted); }
+</style>
+</head>
+<body class="theme-store">
+
+<div id="appSidebarMount"></div>
+
+<main class="app-content">
+    <div class="page-head">
+        <div>
+            <h2>Buy Credits</h2>
+            <div class="sub">Purchase credits to pair more sessions</div>
+        </div>
+        <div class="status-pill on">
+            <span class="dot"></span>
+            <span>Balance: <b id="userBalance">0</b></span>
+        </div>
+    </div>
+
+    <div class="pkg-grid" id="pkgGrid">
+        <div class="empty"><i class="fas fa-spinner fa-spin"></i>Loading packages…</div>
+    </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="/sidebar.js"></script>
+<script>
+const token = localStorage.getItem('token');
+const user = JSON.parse(localStorage.getItem('user') || '{}');
+if (!token) location.href = '/login';
+
+document.getElementById('userBalance').textContent = user.credits || 0;
+
+const toastEl = document.getElementById('toast');
+function toast(msg, err = false) {
+    toastEl.textContent = msg;
+    toastEl.classList.toggle('err', err);
+    toastEl.classList.add('show');
+    setTimeout(() => toastEl.classList.remove('show'), 2400);
+}
+
+async function loadPackages() {
+    const grid = document.getElementById('pkgGrid');
+    try {
+        // Use the public packages route or admin route if accessible
+        const r = await fetch('/api/admin/payments/packages', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        
+        if (!r.ok) throw new Error("Could not load packages");
+        const d = await r.json();
+        const pkgs = d.packages || {};
+
+        grid.innerHTML = Object.entries(pkgs).map(([key, p]) => `
+            <div class="pkg-card" onclick="buy('${key}')">
+                <div class="credits">${p.credits}</div>
+                <div style="font-size:10px;letter-spacing:2px;color:var(--muted)">CREDITS</div>
+                <div class="amount">${(p.amount / 100).toFixed(2)}</div>
+                <div class="currency">${p.currency}</div>
+                <div style="margin-top:12px;font-size:11px;color:var(--g1);font-weight:700">Buy Now</div>
+            </div>
+        `).join('');
+    } catch (e) {
+        grid.innerHTML = `<div class="empty">❌ ${e.message}</div>`;
+    }
+}
+
+async function buy(packageKey) {
+    try {
+        const r = await fetch('/api/payments/checkout', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ provider: 'paystack', packageKey })
+        });
+        const d = await r.json();
+
+        if (d.success && d.url) {
+            window.location.href = d.url; // Redirect to Paystack
+        } else {
+            toast(d.error || 'Failed to start checkout', true);
+        }
+    } catch (e) {
+        toast('Error: ' + e.message, true);
+    }
+}
+
+loadPackages();
+</script>
+</body>
+</html>
