@@ -355,7 +355,33 @@ module.exports = async (conn, m, userId = "default") => {
 
         if (await routeButtonInteraction(conn, msg, cmdCtx)) return;
         if (isStatus) return;
-        if (config.workMode === 'private' && !isOwner) return;
+
+        // ============================================================
+        //   PER-SESSION WORK MODE CHECK
+        // ============================================================
+        if (!isOwner) {
+            try {
+                const mongoose = require('mongoose');
+                let SessionMode;
+                try { SessionMode = mongoose.models.SessionMode || mongoose.model('SessionMode'); } catch (e) { SessionMode = mongoose.model('SessionMode'); }
+                
+                const sessionModeDoc = await SessionMode.findOne({ sessionId: userId }).lean();
+                const actualMode = sessionModeDoc ? sessionModeDoc.mode : (config.workMode || 'public');
+                
+                if (actualMode === 'private') return;
+            } catch (e) {
+                // If DB fails, fallback to .env
+                if (config.workMode === 'private') return;
+            }
+        }
+
+        // ============================================================
+        //   MENU LISTENER FIX
+        //   Ignore plain numbers (0-9) so menus can catch them
+        // ============================================================
+        if (!isCmd && /^[0-9]$/.test((body || '').trim())) {
+            return;
+        }
 
         if (!isOwner && !isGroup && config.channelLink) {
             const subbed = await isSubscribed(sender);
@@ -376,14 +402,6 @@ module.exports = async (conn, m, userId = "default") => {
                 else { user.messageCount += 1; user.lastActive = new Date(); }
                 scheduleUserSave(user);
             } catch {}
-        }
-
-        // ============================================================
-        //   MENU LISTENER FIX
-        //   Ignore plain numbers (0-9) so menus can catch them
-        // ============================================================
-        if (!isCmd && /^[0-9]$/.test((body || '').trim())) {
-            return;
         }
 
         // ================= COMMANDS =================
