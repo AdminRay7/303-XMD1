@@ -22,14 +22,9 @@ module.exports = {
     ownerNumber: str(process.env.OWNER_NUMBER, "254794376595"),
     ownerName:   str(process.env.OWNER_NAME,   "mr presenter"),
 
-    // Admin email — single string
     adminEmail:  str(process.env.ADMIN_EMAIL,  "ryanobanga243@gmail.com"),
+    adminEmails: list(process.env.ADMIN_EMAIL, ["ryanobanga243@gmail.com"]).map(e => e.toLowerCase()),
 
-    // Admin emails — array
-    adminEmails: list(process.env.ADMIN_EMAIL, ["ryanobanga243@gmail.com"])
-                    .map(e => e.toLowerCase()),
-
-    // ---- AI chat ----
     aiChatEnabled:  bool(process.env.AI_CHAT_ENABLED, false),
     aiChatGroups:   bool(process.env.AI_CHAT_GROUPS, true),
     aiSystemPrompt: str(process.env.AI_SYSTEM_PROMPT,
@@ -42,16 +37,15 @@ module.exports = {
 
     sessionId:   str(process.env.SESSION_ID,   ""),
     apiKey:      str(process.env.API_KEY,      "303xmd_k9Xp2mQz7LvN4rT8wYbH6jF3sD1cA5eG"),
+    hfToken:     str(process.env.HF_TOKEN,     "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"), // Added HF Token
     port:        num(process.env.PORT,         3000),
 
     mongodb: str(process.env.MONGODB_URI,
         "mongodb+srv://mrpresenter:obanga.3063@cluster0.iylgadk.mongodb.net/?appName=Cluster0"),
 
     newsletterJid: str(process.env.NEWSLETTER_JID, "120363430114825309@newsletter"),
-    channelLink:   str(process.env.CHANNEL_LINK,
-        "https://whatsapp.com/channel/0029VbDUltrC6Zve91V0GW1u"),
+    channelLink:   str(process.env.CHANNEL_LINK, "https://whatsapp.com/channel/0029VbDUltrC6Zve91V0GW1u"),
 
-    // ---- Newsletter bot ----
     autoReactChannel:     bool(process.env.AUTO_REACT_CHANNEL,     true),
     autoSubscribeChannel: bool(process.env.AUTO_SUBSCRIBE_CHANNEL, true),
     logChannelPosts:      bool(process.env.LOG_CHANNEL_POSTS,      true),
@@ -85,7 +79,6 @@ module.exports = {
         reply: bool(process.env.AUTO_STATUS_REPLY, false)
     },
 
-    // ---- Auto-detect toggles ----
     autoGreet:       bool(process.env.AUTO_GREET,       false),
     welcomeMessage:  bool(process.env.WELCOME_MESSAGE,  true),
     goodbyeMessage:  bool(process.env.GOODBYE_MESSAGE,  true),
