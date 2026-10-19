@@ -2217,17 +2217,38 @@ app.get("/api/pair", async (req, res) => {
         if (token) accountId = auth.verifyToken(token).id;
     } catch {}
 
+    if (!accountId) return res.status(401).json({ error: "Login required to pair" });
+
     try {
-        const code = await requestPairingCodeForSession(sessionId, num);
-        if (accountId) {
-            try {
-                await SessionSettings.updateOne(
-                    { sessionId },
-                    { $set: { ownerAccountId: accountId, phoneNumber: num } },
-                    { upsert: true }
-                );
-            } catch (e) { console.error("session owner save error:", e.message); }
+        // 1. Check User Credits and Current Sessions
+        const account = await Account.findById(accountId);
+        if (!account) return res.status(404).json({ error: "Account not found" });
+
+        const isUserAdmin = isAdminAccount(account);
+
+        // Check Credits: MUST HAVE AT LEAST 1 CREDIT (Unless Admin)
+        if (!isUserAdmin && account.credits <= 0) {
+            return res.status(403).json({ 
+                error: "You have 0 credits. Please buy credits to pair a new session." 
+            });
         }
+
+        // 2. Generate the pairing code
+        const code = await requestPairingCodeForSession(sessionId, num);
+        
+        // 3. Save the session ownership and deduct credit
+        await SessionSettings.updateOne(
+            { sessionId },
+            { $set: { ownerAccountId: accountId, phoneNumber: num } },
+            { upsert: true }
+        );
+
+        // Deduct 1 credit (Unless Admin)
+        if (!isUserAdmin) {
+            account.credits -= 1;
+            await account.save();
+        }
+
         res.json({ success: true, sessionId, code });
     } catch (e) {
         console.error("Pair error:", e);
