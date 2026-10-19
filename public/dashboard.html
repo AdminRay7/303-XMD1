@@ -51,6 +51,13 @@
             </div>
 
             <div id="pairStep1">
+                <!-- CREDIT BANNER -->
+                <div id="creditBanner" style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px; margin-bottom: 20px; display:none;">
+                    <p style="margin:0; font-size:14px; color:#aaa;">Available Credits:</p>
+                    <div style="font-size: 24px; font-weight: bold; color: #00e5a0;" id="creditCount">0</div>
+                    <p style="margin:5px 0 0 0; font-size:12px; color:#ff9999;" id="creditWarning"></p>
+                </div>
+
                 <label class="field-label">WhatsApp Number</label>
                 <input class="input center" type="tel" id="phoneNum" placeholder="254712345678" inputmode="numeric" maxlength="15">
                 <button class="btn btn-primary btn-block" id="submitBtn">
@@ -125,6 +132,37 @@ if (!token) location.href = '/login';
 document.getElementById('credits').textContent     = user.credits || 0;
 document.getElementById('maxSessions').textContent = user.maxSessions || 3;
 
+async function loadUserCredits() {
+    try {
+        const res = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + token } });
+        const data = await res.json();
+        
+        if (data.success) {
+            const user = data.user;
+            
+            // If Admin, hide the credit banner entirely
+            if (user.isAdmin) {
+                document.getElementById('creditBanner').style.display = 'none';
+                return;
+            }
+
+            // If regular user, show credits
+            document.getElementById('creditBanner').style.display = 'block';
+            document.getElementById('creditCount').textContent = user.credits;
+
+            if (user.credits <= 0) {
+                document.getElementById('creditWarning').textContent = "You have 0 credits. Buy credits to pair a new number.";
+                document.getElementById('submitBtn').disabled = true;
+                document.getElementById('submitBtn').style.opacity = '0.5';
+            } else {
+                document.getElementById('submitBtn').disabled = false;
+                document.getElementById('submitBtn').style.opacity = '1';
+            }
+        }
+    } catch (e) { console.error('Failed to load credits:', e); }
+}
+loadUserCredits();
+
 // ============================================
 //   TOAST
 // ============================================
@@ -191,6 +229,7 @@ submitBtn.onclick = async () => {
         step2.style.display = 'block';
         codeBox.innerText = data.code;
         showToast('Code generated!');
+        loadUserCredits(); // Refresh credits after deducting
     } catch (e) {
         errBox.innerText = e.message;
         errBox.classList.add('show');
