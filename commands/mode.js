@@ -1,44 +1,38 @@
 // commands/mode.js
-// Switch the bot between public and private mode.
+// Switch the bot between public and private mode (Per Session).
 // Usage: .mode public  OR  .mode private
 
 const { fancy } = require('../lib/font');
 const config = require('../config');
 const mongoose = require('mongoose');
 
-// We use the Setting model to save the mode in MongoDB
-let Setting;
-try { ({ Setting } = require('../database/models')); } catch (_) {}
-
-if (!Setting) {
-    const settingSchema = new mongoose.Schema({
-        key: { type: String, unique: true, index: true },
-        value: mongoose.Schema.Types.Mixed,
-        updatedAt: { type: Date, default: Date.now }
-    });
-    Setting = mongoose.models.Setting || mongoose.model('Setting', settingSchema);
-}
+// 1. Create a standalone model for session modes
+const SessionModeSchema = new mongoose.Schema({
+    sessionId: { type: String, unique: true, index: true },
+    mode: { type: String, default: 'public' }, // 'public' or 'private'
+    updatedAt: { type: Date, default: Date.now }
+});
+const SessionMode = mongoose.models.SessionMode || mongoose.model('SessionMode', SessionModeSchema);
 
 module.exports = {
     name: 'mode',
     category: 'owner',
     aliases: ['workmode'],
-    description: 'Switch bot between public and private mode',
+    description: 'Switch bot mode for THIS session only',
     async execute(conn, msg, args, ctx) {
-        const { from, isOwner } = ctx;
+        const { from, isOwner, userId } = ctx;
         
-        // Only the owner can change the mode
+        // Only the session owner can change the mode for their bot
         if (!isOwner) return conn.sendMessage(from, { text: fancy('❌ Owner only.') });
 
         const action = (args[0] || '').toLowerCase();
 
-        // Show current mode if no arguments
+        // Show current mode
         if (!action) {
-            // Check DB first, then fallback to .env
             let currentMode = config.workMode || 'public';
             try {
-                const doc = await Setting.findOne({ key: 'work_mode' }).lean();
-                if (doc) currentMode = doc.value;
+                const doc = await SessionMode.findOne({ sessionId: userId }).lean();
+                if (doc) currentMode = doc.mode;
             } catch {}
 
             const text = `⚙️ *Bot Mode*\n\n` +
@@ -54,22 +48,19 @@ module.exports = {
         }
 
         try {
-            // 1. Save to Database
-            await Setting.updateOne(
-                { key: 'work_mode' },
-                { $set: { value: action, updatedAt: new Date() } },
+            // Save to Database for THIS session only
+            await SessionMode.updateOne(
+                { sessionId: userId },
+                { $set: { mode: action, updatedAt: new Date() } },
                 { upsert: true }
             );
 
-            // 2. Update runtime memory (so it works instantly without restart)
-            config.workMode = action;
-
-            // 3. Reply
             const emoji = action === 'private' ? '🔒' : '🌐';
-            const text = `${emoji} *Mode Updated*\n\nBot is now in *${action.toUpperCase()}* mode.\n\n` +
+            const text = `${emoji} *MODE UPDATED*\n\n` +
+                         `This bot is now in *${action.toUpperCase()}* mode.\n\n` +
                          (action === 'private' 
-                            ? 'Only the owner can use commands.' 
-                            : 'Everyone can use commands.');
+                            ? 'Only the owner can use commands on this session.' 
+                            : 'Everyone can use commands on this session.');
             
             await conn.sendMessage(from, { text: fancy(text) }, { quoted: msg });
 
