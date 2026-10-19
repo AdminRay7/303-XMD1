@@ -29,6 +29,7 @@ body.theme-payments{
     position:relative;
     overflow:hidden;
     transition:.2s;
+    cursor:pointer;
 }
 .pkg-card::before{
     content:'';
@@ -135,16 +136,8 @@ body.theme-payments{
 
 <script src="/sidebar.js"></script>
 <script>
-const ADMIN_EMAIL = 'ryanobanga243@gmail.com';
 const token = localStorage.getItem('token');
-const user = JSON.parse(localStorage.getItem('user') || '{}');
 if (!token) location.href = '/login';
-
-const email = (user.email || '').trim().toLowerCase();
-if (email !== ADMIN_EMAIL.toLowerCase()) {
-    document.body.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#fff;font-family:sans-serif"><h2>ACCESS DENIED</h2></div>`;
-    throw new Error('Not admin');
-}
 
 const toastEl = document.getElementById('toast');
 function toast(msg, err = false) {
@@ -172,15 +165,41 @@ async function loadPackages() {
         }
 
         grid.innerHTML = Object.entries(pkgs).map(([key, p]) => `
-            <div class="pkg-card">
+            <div class="pkg-card" onclick="buy('${key}')">
                 <div class="credits">${p.credits}</div>
                 <div class="label">Credits</div>
                 <div class="amount">${(p.amount / 100).toFixed(2)}</div>
                 <div class="currency">${escapeHtml(p.currency)}</div>
                 <div style="margin-top:12px;font-size:10px;color:var(--muted);letter-spacing:2px;text-transform:uppercase">${escapeHtml(key)}</div>
+                <div style="margin-top:10px;font-size:11px;color:var(--g1);font-weight:700">Click to Buy</div>
             </div>
         `).join('');
     } catch (e) { grid.innerHTML = `<div class="empty">❌ ${escapeHtml(e.message)}</div>`; }
+}
+
+// ============================================
+//   PAYMENT CHECKOUT
+// ============================================
+async function buy(packageKey) {
+    try {
+        const r = await fetch('/api/payments/checkout', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ provider: 'paystack', packageKey })
+        });
+        const d = await r.json();
+
+        if (d.success && d.url) {
+            window.location.href = d.url; // Redirect to Paystack
+        } else {
+            toast(d.error || 'Failed to start checkout', true);
+        }
+    } catch (e) {
+        toast('Error: ' + e.message, true);
+    }
 }
 
 async function loadInvoices() {
