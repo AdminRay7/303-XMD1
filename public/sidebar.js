@@ -16,7 +16,8 @@
     // ---- THEME MAPPING ----
     const THEMES = {
         dashboard:         'theme-dashboard',
-        store:             'theme-dashboard', // Added for store
+        store:             'theme-store',
+        appstore:          'theme-store',
         pair:              'theme-pair',
         channel:           'theme-channel',
         live:              'theme-live',
@@ -52,12 +53,13 @@
     const NAV = [
         { sec: 'Main' },
         { id: 'dashboard', href: '/dashboard', icon: 'fa-gauge-high',      label: 'Dashboard' },
-        { id: 'store',     href: '/store',     icon: 'fa-shopping-cart',   label: 'Buy Credits' }, // Added store
         { id: 'pair',      href: '/pair',      icon: 'fa-link',            label: 'Pair Device' },
         { id: 'channel',   href: '/channel',   icon: 'fa-tower-broadcast', label: 'Channel' },
         { id: 'web',       href: '/web',       icon: 'fa-comments',        label: 'Web Chat' },
 
         { sec: 'Account' },
+        { id: 'store',     href: '/store',     icon: 'fa-shopping-cart',   label: 'Buy Credits' },
+        { id: 'appstore',  href: '/appstore',  icon: 'fa-store',           label: 'App Store' },
         { id: 'profile',   href: '/profile',   icon: 'fa-user',            label: 'My Profile' },
         { id: 'live',      href: '/live',      icon: 'fa-satellite-dish',  label: 'Live Monitor' },
         { id: 'settings',  href: '/settings',  icon: 'fa-gear',            label: 'Settings' },
@@ -75,7 +77,6 @@
         { id: 'admin-backup',      href: '/admin-backup',      icon: 'fa-box-archive',    label: 'Backup',             admin: true },
         { id: 'admin-payments',    href: '/admin-payments',    icon: 'fa-credit-card',    label: 'Payments',           admin: true },
         { id: 'admin-ai',          href: '/admin-ai',          icon: 'fa-robot',          label: 'AI Control',         admin: true },
-{ id: 'appstore', href: '/appstore', icon: 'fa-store', label: 'App Store' },
         { id: 'api-docs',          href: '/api-docs',          icon: 'fa-code',           label: 'API Docs',           admin: true }
     ];
 
