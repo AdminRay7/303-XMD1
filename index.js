@@ -400,24 +400,11 @@ app.get("/service-worker.js", (req, res) => {
     if (!fs.existsSync(p)) return res.status(404).send("service-worker.js missing");
     res.type("application/javascript").sendFile(p);
 });
-app.get('/download-apk', async (req, res) => {
-    try {
-        const response = await fetch('https://github.com/AdminRay7/303-XMD1/releases/download/v1.0.0/303-XMD.apk');
-        
-        if (!response.ok) throw new Error('Failed to fetch APK from GitHub');
-
-        // Set headers to force download directly from your site
-        res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-        res.setHeader('Content-Disposition', 'attachment; filename="303-XMD.apk"');
-        
-        // Convert the fetch response to a Node.js buffer and send it
-        const buffer = await response.arrayBuffer();
-        res.send(Buffer.from(buffer));
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('Error downloading APK');
-    }
+app.get('/download-apk', (req, res) => {
+    // This forces the browser to follow the link and download the file immediately
+    res.redirect('https://github.com/AdminRay7/303-XMD1/releases/download/v1.0.0/303-XMD.apk');
 });
+
 // ============================================
 //   AUTH ROUTES
 // ============================================
