@@ -75,6 +75,7 @@
         { id: 'admin-backup',      href: '/admin-backup',      icon: 'fa-box-archive',    label: 'Backup',             admin: true },
         { id: 'admin-payments',    href: '/admin-payments',    icon: 'fa-credit-card',    label: 'Payments',           admin: true },
         { id: 'admin-ai',          href: '/admin-ai',          icon: 'fa-robot',          label: 'AI Control',         admin: true },
+{ id: 'appstore', href: '/appstore', icon: 'fa-store', label: 'App Store' },
         { id: 'api-docs',          href: '/api-docs',          icon: 'fa-code',           label: 'API Docs',           admin: true }
     ];
 
