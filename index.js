@@ -401,6 +401,10 @@ app.get("/service-worker.js", (req, res) => {
     res.type("application/javascript").sendFile(p);
 });
 
+app.get('/download-apk', (req, res) => {
+    // This forces the phone to download the file directly
+    res.redirect('https://github.com/AdminRay7/303-XMD1/releases/download/v1.0.0/303-XMD.apk');
+});
 // ============================================
 //   AUTH ROUTES
 // ============================================
