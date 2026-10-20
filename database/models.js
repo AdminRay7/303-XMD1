@@ -167,6 +167,21 @@ const KeywordTriggerSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // ============================================================
+//   STORE APP (for the App Store)
+// ============================================================
+
+const StoreAppSchema = new mongoose.Schema({
+    name:        { type: String, required: true },
+    description: { type: String, required: true },
+    category:    { type: String, default: "Tools" },
+    price:       { type: Number, default: 0 },
+    icon:        { type: String, default: "fa-robot" },
+    downloadUrl: { type: String, required: true },
+    downloads:   { type: Number, default: 0 },
+    createdAt:   { type: Date, default: Date.now }
+}, { timestamps: true });
+
+// ============================================================
 //   EXPORTS  (mongoose.models.X prevents OverwriteModelError
 //   if this file is ever required twice during hot-reload)
 // ============================================================
@@ -187,5 +202,8 @@ module.exports = {
 
     // Automation
     AutoReply:         mongoose.models.AutoReply         || mongoose.model("AutoReply", AutoReplySchema),
-    KeywordTrigger:    mongoose.models.KeywordTrigger    || mongoose.model("KeywordTrigger", KeywordTriggerSchema)
+    KeywordTrigger:    mongoose.models.KeywordTrigger    || mongoose.model("KeywordTrigger", KeywordTriggerSchema),
+
+    // App Store
+    StoreApp:          mongoose.models.StoreApp          || mongoose.model("StoreApp", StoreAppSchema)
 };
