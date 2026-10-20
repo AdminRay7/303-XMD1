@@ -6,7 +6,7 @@ const path = require('path');
 const axios = require('axios');
 const config = require('./config');
 const { fancy } = require('./lib/font');
-const { User, ChannelSubscriber, ChannelPost } = require('./database/models');
+const { User, ChannelSubscriber, ChannelPost, SessionSettings } = require('./database/models'); // Added SessionSettings
 const messageStore = require('./lib/messageStore');
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 const analytics = require('./lib/analytics');
@@ -158,96 +158,21 @@ async function routeButtonInteraction(conn, msg, ctx) {
     return false;
 }
 
-// ================= SNAKE GAME HANDLER =================
-const snakeGames = new Map();
-const SNAKE_GRID = 15;
-
-async function handleSnakeButtons(conn, msg, from, sender) {
-    const buttonId = msg.message?.buttonsResponseMessage?.selectedButtonId;
-    if (!buttonId) return false;
-
-    const game = snakeGames.get(sender);
-    if (!game || !game.active) return false;
-
-    // Update Direction
-    if (buttonId === 'up' && game.dir.y !== 1) game.dir = { x: 0, y: -1 };
-    if (buttonId === 'down' && game.dir.y !== -1) game.dir = { x: 0, y: 1 };
-    if (buttonId === 'left' && game.dir.x !== 1) game.dir = { x: -1, y: 0 };
-    if (buttonId === 'right' && game.dir.x !== -1) game.dir = { x: 1, y: 0 };
-
-    // Calculate new head
-    const head = { x: game.snake[0].x + game.dir.x, y: game.snake[0].y + game.dir.y };
-
-    // Check Wall
-    if (head.x < 0 || head.x >= SNAKE_GRID || head.y < 0 || head.y >= SNAKE_GRID) {
-        snakeGames.delete(sender);
-        await conn.sendMessage(from, { text: fancy(`💀 *GAME OVER!* You hit the wall.\nFinal Score: ${game.score}`) });
-        return true;
-    }
-
-    // Check Self
-    if (game.snake.some(s => s.x === head.x && s.y === head.y)) {
-        snakeGames.delete(sender);
-        await conn.sendMessage(from, { text: fancy(`💀 *GAME OVER!* You ate yourself.\nFinal Score: ${game.score}`) });
-        return true;
-    }
-
-    // Move Snake
-    game.snake.unshift(head);
-
-    // Check Food
-    if (head.x === game.food.x && head.y === game.food.y) {
-        game.score += 10;
-        game.food = { 
-            x: Math.floor(Math.random() * SNAKE_GRID), 
-            y: Math.floor(Math.random() * SNAKE_GRID) 
-        };
-    } else {
-        game.snake.pop();
-    }
-
-    // Redraw & Send
-    const { createCanvas } = require('@napi-rs/canvas');
-    const TILE_SIZE = 30;
-    const canvas = createCanvas(SNAKE_GRID * TILE_SIZE, SNAKE_GRID * TILE_SIZE);
-    const ctx = canvas.getContext('2d');
-    
-    ctx.fillStyle = '#1a1a2e';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    ctx.fillStyle = '#ff4757';
-    ctx.fillRect(game.food.x * TILE_SIZE, game.food.y * TILE_SIZE, TILE_SIZE - 2, TILE_SIZE - 2);
-    
-    game.snake.forEach((segment, index) => {
-        ctx.fillStyle = index === 0 ? '#2ed573' : '#7bed9f';
-        ctx.fillRect(segment.x * TILE_SIZE, segment.y * TILE_SIZE, TILE_SIZE - 2, TILE_SIZE - 2);
-    });
-
-    const buffer = canvas.toBuffer('image/png');
-    
-    const msgContent = {
-        image: buffer,
-        caption: fancy(`🐍 *SNAKE GAME*\nScore: ${game.score}\nUse buttons to move!`),
-        footer: 'Keep going!',
-        buttons: [
-            { buttonId: 'up', buttonText: { displayText: '⬆️ Up' }, type: 1 },
-            { buttonId: 'down', buttonText: { displayText: '⬇️ Down' }, type: 1 },
-            { buttonId: 'left', buttonText: { displayText: '⬅️ Left' }, type: 1 },
-            { buttonId: 'right', buttonText: { displayText: '➡️ Right' }, type: 1 }
-        ].slice(0, 3),
-        headerType: 4
-    };
-
-    await conn.sendMessage(from, msgContent);
-    return true;
-}
-
 // ================= MAIN HANDLER =================
 module.exports = async (conn, m, userId = "default") => {
     try {
         if (!m.messages || !m.messages[0]) return;
         const msg = m.messages[0];
         if (!msg.message) return;
+
+        // --- FETCH CUSTOM SETTINGS FOR THIS SESSION ---
+        let customSettings = {};
+        try {
+            customSettings = await SessionSettings.findOne({ sessionId: userId }).lean() || {};
+        } catch (e) {}
+
+        const currentPrefix = customSettings.prefix || config.prefix;
+        const currentBotName = customSettings.botName || config.botName;
 
         const from = msg.key.remoteJid;
         const type = Object.keys(msg.message)[0];
@@ -262,9 +187,8 @@ module.exports = async (conn, m, userId = "default") => {
         const isGroup   = from.endsWith('@g.us');
         const isChannel = from.endsWith('@newsletter');
         const isStatus  = from === 'status@broadcast';
-        const prefix    = config.prefix;
-        const isCmd     = body && body.startsWith(prefix);
-        const command   = isCmd ? body.slice(prefix.length).trim().split(' ')[0].toLowerCase() : '';
+        const isCmd     = body && body.startsWith(currentPrefix);
+        const command   = isCmd ? body.slice(currentPrefix.length).trim().split(' ')[0].toLowerCase() : '';
         const args      = body ? body.trim().split(/ +/).slice(1) : [];
 
         // Owner detection
@@ -282,7 +206,7 @@ module.exports = async (conn, m, userId = "default") => {
 
         const cmdCtx = {
             from, sender, fancy, isOwner, pushname, config, conn, msg,
-            userId, isGroup, isChannel, isStatus, body, args, command, prefix, isCmd,
+            userId, isGroup, isChannel, isStatus, body, args, command, prefix: currentPrefix, botName: currentBotName, isCmd,
             senderBare, sessionBare, ownerCfgBare
         };
 
@@ -436,9 +360,6 @@ module.exports = async (conn, m, userId = "default") => {
             }
             return;
         }
-
-        // Check Snake Game first
-        if (await handleSnakeButtons(conn, msg, from, sender)) return;
 
         if (await routeButtonInteraction(conn, msg, cmdCtx)) return;
         if (isStatus) return;
