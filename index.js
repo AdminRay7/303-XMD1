@@ -408,7 +408,7 @@ app.get('/download-apk', (req, res) => {
 // Delete an app (Admin Only)
 app.delete('/api/admin/store/apps/:id', async (req, res) => {
     try {
-        const { StoreApp } = require('./models'); // Ensure StoreApp is imported
+        // Removed the require line here because StoreApp is already imported at the top of index.js
         const deletedApp = await StoreApp.findByIdAndDelete(req.params.id);
         
         if (!deletedApp) {
