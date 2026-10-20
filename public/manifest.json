@@ -1,27 +1,26 @@
 {
-  "name": "303-XMD — The Last Key",
-  "short_name": "303-XMD",
-  "description": "WhatsApp automation bot with pairing panel, session management and full command suite.",
-  "start_url": "/dashboard",
-  "scope": "/",
+  "background_color": "#ffffff",
+  "description": "303-XMD — WhatsApp automation bot with pairing panel and session management.",
+  "dir": "ltr",
   "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#0a0000",
-  "theme_color": "#00d4ff",
-  "categories": ["productivity", "utilities"],
-  "lang": "en",
+  "name": "303-XMD",
+  "orientation": "any",
+  "scope": "/",
+  "short_name": "303-XMD",
+  "start_url": "/",
+  "theme_color": "#0a0000",
   "icons": [
     {
-      "src": "/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "src": "data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'&gt;&lt;text y='.9em' font-size='90'&gt;🔑&lt;/text&gt;&lt;/svg&gt;",
+      "isSquare": false,
+      "isPng": false,
+      "isWebp": false,
+      "isJpg": false,
+      "width": 0,
+      "is512x512": false,
+      "is256x256": false,
+      "is192x192": false
     }
-  ]
+  ],
+  "id": "com.303xmd.app"
 }
