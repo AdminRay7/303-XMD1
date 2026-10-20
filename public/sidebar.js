@@ -36,6 +36,7 @@
         'admin-backup':    'theme-backup',
         'admin-payments':  'theme-payments',
         'admin-ai':        'theme-ai',
+        'admin-appstore':  'theme-admin', // Added for App Store Upload
         'api-docs':        'theme-api',
         'api-dics':        'theme-api'
     };
@@ -66,6 +67,7 @@
 
         { sec: 'Admin', admin: true },
         { id: 'admin',             href: '/admin',             icon: 'fa-shield-halved',  label: 'Admin Panel',        admin: true },
+        { id: 'admin-appstore',    href: '/admin-appstore',    icon: 'fa-upload',         label: 'Upload App',         admin: true },
         { id: 'admin-sessions',    href: '/admin-sessions',    icon: 'fa-plug',           label: 'Sessions Control',   admin: true },
         { id: 'admin-takeover',    href: '/admin-takeover',    icon: 'fa-masks-theater',  label: 'Session Takeover',   admin: true },
         { id: 'admin-commands',    href: '/admin-commands',    icon: 'fa-bolt',           label: 'Commands Playground', admin: true },
