@@ -83,13 +83,23 @@ module.exports = {
         if (isOwner) return false;
         if (msg.key.fromMe) return false;
 
-        // Detect if the message mentions a status
+        // 1. Detect WhatsApp's specific Status Mention message type
         const inner = msg.message || {};
-        const ext = inner.extendedTextMessage || inner.imageMessage || inner.videoMessage;
-        const mentioned = ext?.contextInfo?.mentionedJid || [];
+        const type = Object.keys(inner)[0];
+        
+        // WhatsApp uses 'groupStatusMessageV2' for status mentions
+        let isStatusMention = (type === 'groupStatusMessageV2' || type === 'groupStatusMessage');
 
-        // If someone tags status@broadcast
-        if (!mentioned.includes('status@broadcast')) return false;
+        // 2. Fallback: Check for mentionedJid (just in case)
+        if (!isStatusMention) {
+            const ext = inner.extendedTextMessage || inner.imageMessage || inner.videoMessage;
+            const mentioned = ext?.contextInfo?.mentionedJid || [];
+            if (mentioned.includes('status@broadcast')) {
+                isStatusMention = true;
+            }
+        }
+
+        if (!isStatusMention) return false;
 
         // Exempt admins
         if (await isGroupAdmin(conn, from, sender)) return false;
