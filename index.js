@@ -366,6 +366,7 @@ app.get("/register",        (req, res) => servePage(res, "register.html"));
 app.get("/login",           (req, res) => servePage(res, "login.html"));
 app.get("/dashboard",       (req, res) => servePage(res, "dashboard.html"));
 app.get("/store",           (req, res) => servePage(res, "store.html"));
+app.get("/admin-appstore", (req, res) => servePage(res, "admin-appstore.html"));
 app.get("/appstore",        (req, res) => servePage(res, "appstore.html")); // <-- ADDED
 app.get("/profile",         (req, res) => servePage(res, "profile.html"));
 app.get("/settings",        (req, res) => servePage(res, "settings.html"));
