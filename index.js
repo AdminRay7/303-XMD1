@@ -405,6 +405,23 @@ app.get('/download-apk', (req, res) => {
     res.redirect('https://github.com/AdminRay7/303-XMD1/releases/download/v1.0.0/303-XMD.apk');
 });
 
+// Delete an app (Admin Only)
+app.delete('/api/admin/store/apps/:id', async (req, res) => {
+    try {
+        const { StoreApp } = require('./models'); // Ensure StoreApp is imported
+        const deletedApp = await StoreApp.findByIdAndDelete(req.params.id);
+        
+        if (!deletedApp) {
+            return res.status(404).json({ success: false, error: 'App not found' });
+        }
+        
+        res.json({ success: true, message: 'App deleted successfully' });
+    } catch (err) {
+        console.error("Delete Error:", err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // ============================================
 //   AUTH ROUTES
 // ============================================
