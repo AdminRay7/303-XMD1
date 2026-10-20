@@ -54,7 +54,7 @@ const path = require("path");
 const fs = require("fs");
 const config = require("./config");
 const { fancy } = require("./lib/font");
-const { ChannelPost, Account, SessionSettings, MessageLog, LiveEvent, AutoReply, KeywordTrigger } = require("./database/models");
+const { ChannelPost, Account, SessionSettings, MessageLog, LiveEvent, AutoReply, KeywordTrigger, StoreApp } = require("./database/models");
 const auth = require("./lib/auth");
 const adminAuth = require("./lib/adminAuth");
 const apiKeys = require("./lib/apiKeys");
@@ -365,6 +365,8 @@ app.get("/",                (req, res) => servePage(res, "index.html"));
 app.get("/register",        (req, res) => servePage(res, "register.html"));
 app.get("/login",           (req, res) => servePage(res, "login.html"));
 app.get("/dashboard",       (req, res) => servePage(res, "dashboard.html"));
+app.get("/store",           (req, res) => servePage(res, "store.html"));
+app.get("/appstore",        (req, res) => servePage(res, "appstore.html")); // <-- ADDED
 app.get("/profile",         (req, res) => servePage(res, "profile.html"));
 app.get("/settings",        (req, res) => servePage(res, "settings.html"));
 app.get("/live",            (req, res) => servePage(res, "live.html"));
@@ -387,7 +389,6 @@ app.get("/api-docs.html",   (req, res) => servePage(res, "api-docs.html"));
 app.get("/pair",            (req, res) => servePage(res, "pair.html"));
 app.get("/mobile",          (req, res) => servePage(res, "app.html"));
 app.get("/app",             (req, res) => servePage(res, "app.html"));
-app.get("/store", (req, res) => servePage(res, "store.html"));
 app.get("/manifest.json",   (req, res) => {
     const p = path.join(__dirname, "public", "manifest.json");
     if (!fs.existsSync(p)) return res.status(404).send("manifest.json missing");
@@ -1585,6 +1586,54 @@ app.post("/api/admin/ai/toggle-groups", adminAuth.requireAdmin, async (req, res)
 });
 
 // ============================================
+//   APP STORE
+// ============================================
+app.get("/api/store/apps", auth.requireAuth, async (req, res) => {
+    try {
+        const apps = await StoreApp.find({}).sort({ downloads: -1 }).lean();
+        res.json({ success: true, apps });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/store/download/:id", auth.requireAuth, async (req, res) => {
+    try {
+        const app = await StoreApp.findById(req.params.id);
+        if (!app) return res.status(404).json({ error: "App not found" });
+
+        const account = await Account.findById(req.account.id);
+        if (!account) return res.status(404).json({ error: "Account not found" });
+
+        if (app.price > 0) {
+            if (account.credits < app.price) {
+                return res.status(400).json({ error: "Insufficient coins. Please top up." });
+            }
+            account.credits -= app.price;
+            await account.save();
+        }
+
+        app.downloads += 1;
+        await app.save();
+        
+        res.json({ success: true, url: app.downloadUrl, newBalance: account.credits });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/admin/store/apps", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        const { name, description, icon, category, price, downloadUrl } = req.body;
+        const newApp = await StoreApp.create({ name, description, icon, category, price, downloadUrl });
+        res.json({ success: true, app: newApp });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete("/api/admin/store/apps/:id", adminAuth.requireAdmin, async (req, res) => {
+    try {
+        await StoreApp.findByIdAndDelete(req.params.id);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============================================
 //   WEB MONITOR
 // ============================================
 app.get("/api/web/chat/:jid", auth.requireAuth, async (req, res) => {
@@ -2221,30 +2270,25 @@ app.get("/api/pair", async (req, res) => {
     if (!accountId) return res.status(401).json({ error: "Login required to pair" });
 
     try {
-        // 1. Check User Credits and Current Sessions
         const account = await Account.findById(accountId);
         if (!account) return res.status(404).json({ error: "Account not found" });
 
         const isUserAdmin = isAdminAccount(account);
 
-        // Check Credits: MUST HAVE AT LEAST 1 CREDIT (Unless Admin)
         if (!isUserAdmin && account.credits <= 0) {
             return res.status(403).json({ 
                 error: "You have 0 credits. Please buy credits to pair a new session." 
             });
         }
 
-        // 2. Generate the pairing code
         const code = await requestPairingCodeForSession(sessionId, num);
         
-        // 3. Save the session ownership and deduct credit
         await SessionSettings.updateOne(
             { sessionId },
             { $set: { ownerAccountId: accountId, phoneNumber: num } },
             { upsert: true }
         );
 
-        // Deduct 1 credit (Unless Admin)
         if (!isUserAdmin) {
             account.credits -= 1;
             await account.save();
@@ -2564,7 +2608,6 @@ async function bootSocket(sessionId, session) {
 
     conn.ev.on("messages.upsert", async (m) => {
         try {
-            // Capture media first for the live monitor
             if (m.messages && m.messages[0]?.message && !m.messages[0].key.fromMe) {
                 try { await captureIncomingMedia(conn, m.messages[0], sessionId); }
                 catch (e) { console.error("captureIncomingMedia:", e.message); }
