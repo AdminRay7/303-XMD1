@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Upload App | 303-XMD Admin</title>
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+    body.theme-admin { background: #09090b; }
+    .upload-card { background: #18181b; border: 1px solid #27272a; border-radius: 16px; padding: 24px; max-width: 600px; margin: 0 auto; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; color: #a1a1aa; font-size: 12px; text-transform: uppercase; margin-bottom: 8px; }
+    .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 12px; background: #09090b; border: 1px solid #27272a; border-radius: 8px; color: #fff; outline: none; }
+    .form-group input:focus { border-color: #00e5a0; }
+    .btn-upload { background: #00e5a0; color: #000; font-weight: bold; padding: 14px; border-radius: 8px; border: none; width: 100%; cursor: pointer; font-size: 15px; }
+</style>
+</head>
+<body class="theme-admin">
+<div id="appSidebarMount"></div>
+
+<main class="app-content">
+    <div class="page-head">
+        <div>
+            <h2>Upload App to Store</h2>
+            <div class="sub">Add your bot APK or files for users to buy</div>
+        </div>
+    </div>
+
+    <div class="upload-card">
+        <div class="form-group">
+            <label>App Name</label>
+            <input type="text" id="appName" placeholder="e.g. 303-XMD APK">
+        </div>
+
+        <div class="form-group">
+            <label>Description</label>
+            <textarea id="appDesc" rows="3" placeholder="The official bot app..."></textarea>
+        </div>
+
+        <div class="form-group">
+            <label>Category</label>
+            <select id="appCategory">
+                <option value="Tools">Tools</option>
+                <option value="Games">Games</option>
+                <option value="Social">Social</option>
+                <option value="Utility">Utility</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Price (Coins)</label>
+            <input type="number" id="appPrice" value="0" placeholder="0 for Free">
+        </div>
+
+        <div class="form-group">
+            <label>Icon (FontAwesome class)</label>
+            <input type="text" id="appIcon" value="fa-robot" placeholder="e.g. fa-robot, fa-key, fa-download">
+        </div>
+
+        <div class="form-group">
+            <label>Download URL (Link to APK or file)</label>
+            <input type="text" id="appUrl" placeholder="https://example.com/bot.apk">
+        </div>
+
+        <button class="btn-upload" id="uploadBtn">
+            <i class="fas fa-upload"></i> Publish App
+        </button>
+    </div>
+</main>
+
+<script src="/sidebar.js"></script>
+<script>
+const token = localStorage.getItem('token');
+if (!token) location.href = '/login';
+
+document.getElementById('uploadBtn').onclick = async () => {
+    const name = document.getElementById('appName').value;
+    const description = document.getElementById('appDesc').value;
+    const category = document.getElementById('appCategory').value;
+    const price = parseInt(document.getElementById('appPrice').value) || 0;
+    const icon = document.getElementById('appIcon').value;
+    const downloadUrl = document.getElementById('appUrl').value;
+
+    if (!name || !description || !downloadUrl) {
+        return alert('Please fill in Name, Description, and Download URL.');
+    }
+
+    const btn = document.getElementById('uploadBtn');
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Publishing...';
+    btn.disabled = true;
+
+    try {
+        const r = await fetch('/api/admin/store/apps', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ name, description, category, price, icon, downloadUrl })
+        });
+        
+        const d = await r.json();
+        
+        if (d.success) {
+            alert('App published successfully!');
+            window.location.href = '/appstore'; // Redirect to see it
+        } else {
+            alert('Error: ' + d.error);
+            btn.innerHTML = '<i class="fas fa-upload"></i> Publish App';
+            btn.disabled = false;
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+        btn.innerHTML = '<i class="fas fa-upload"></i> Publish App';
+        btn.disabled = false;
+    }
+};
+</script>
+</body>
+</html>
