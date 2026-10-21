@@ -9,6 +9,30 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔑</text></svg>">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <link rel="stylesheet" href="/theme.css">
+<style>
+    /* Cyberdark-style additions */
+    .welcome-banner {
+        background: linear-gradient(135deg, rgba(0,229,160,0.05) 0%, rgba(123,47,247,0.05) 100%);
+        border: 1px solid rgba(0,229,160,0.2);
+        border-radius: 16px; padding: 20px; margin-bottom: 20px;
+    }
+    .welcome-banner h2 { color: #fff; font-size: 22px; margin: 0 0 6px 0; }
+    .welcome-banner p { color: #a1a1aa; font-size: 13px; margin: 0 0 16px 0; }
+    .welcome-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .btn-cyber { background: #00e5a0; color: #000; font-weight: bold; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-cyber-outline { background: transparent; border: 1px solid #27272a; color: #fff; font-weight: bold; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+
+    .quick-actions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+    .qa-card { background: #18181b; border: 1px solid #27272a; border-radius: 12px; padding: 16px; text-decoration: none; display: flex; flex-direction: column; gap: 8px; transition: 0.2s; }
+    .qa-card:hover { border-color: #00e5a0; transform: translateY(-2px); }
+    .qa-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+    .qa-icon.green { background: rgba(0,229,160,0.1); color: #00e5a0; }
+    .qa-icon.purple { background: rgba(123,47,247,0.1); color: #7b2ff7; }
+    .qa-icon.gold { background: rgba(234,179,8,0.1); color: #eab308; }
+    .qa-icon.blue { background: rgba(59,130,246,0.1); color: #3b82f6; }
+    .qa-title { color: #fff; font-size: 14px; font-weight: bold; }
+    .qa-sub { color: #a1a1aa; font-size: 11px; }
+</style>
 </head>
 <body>
 
@@ -18,7 +42,7 @@
     <div class="page-head">
         <div>
             <h2>Dashboard</h2>
-            <div class="sub">Pair · Manage · Chat</div>
+            <div class="sub">Overview & Controls</div>
         </div>
         <div class="status-pill off" id="statusPill">
             <span class="dot"></span>
@@ -26,6 +50,18 @@
         </div>
     </div>
 
+    <!-- Cyberdark Welcome Banner -->
+    <div class="welcome-banner">
+        <div style="font-size:10px; font-weight:bold; color:#00e5a0; letter-spacing:1px; margin-bottom:4px;">● STANDARD ACCOUNT</div>
+        <h2>Welcome back, <span id="userNameDisplay">User</span></h2>
+        <p>Manage your WhatsApp sessions, chat with the bot, and explore new tools.</p>
+        <div class="welcome-actions">
+            <a href="/store" class="btn-cyber"><i class="fas fa-plus"></i> Add Funds</a>
+            <a href="/appstore" class="btn-cyber-outline"><i class="fas fa-compass"></i> Explore Apps</a>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
     <div class="stats">
         <div class="stat"><div class="l">Credits</div><div class="v" id="credits">0</div></div>
         <div class="stat"><div class="l">Sessions</div><div class="v" id="sessionCount">0</div></div>
@@ -33,6 +69,32 @@
         <div class="stat"><div class="l">Uptime</div><div class="v" id="uptime">0s</div></div>
     </div>
 
+    <!-- Cyberdark Quick Actions -->
+    <h3 style="color:#fff; font-size:14px; margin-bottom:12px;">Quick Actions</h3>
+    <div class="quick-actions-grid">
+        <a href="#" class="qa-card" onclick="alert('Submit Community feature coming soon!')">
+            <div class="qa-icon green"><i class="fas fa-plus"></i></div>
+            <div class="qa-title">Submit Community</div>
+            <div class="qa-sub">WhatsApp / Telegram</div>
+        </a>
+        <a href="/appstore" class="qa-card">
+            <div class="qa-icon purple"><i class="fas fa-download"></i></div>
+            <div class="qa-title">App Store</div>
+            <div class="qa-sub">Download apps</div>
+        </a>
+        <a href="/store" class="qa-card">
+            <div class="qa-icon gold"><i class="fas fa-coins"></i></div>
+            <div class="qa-title">Wallet</div>
+            <div class="qa-sub">Manage funds</div>
+        </a>
+        <a href="/profile" class="qa-card">
+            <div class="qa-icon blue"><i class="fas fa-user"></i></div>
+            <div class="qa-title">Profile</div>
+            <div class="qa-sub">Edit & verify</div>
+        </a>
+    </div>
+
+    <!-- Tabs -->
     <div class="tab-bar" id="dashTabs">
         <button class="tab-btn active" data-tab="pair"><i class="fas fa-link"></i> Pair</button>
         <button class="tab-btn" data-tab="sessions"><i class="fas fa-server"></i> Sessions</button>
@@ -123,7 +185,7 @@
 <script src="/sidebar.js"></script>
 <script>
 // ============================================
-//   AUTH
+//   AUTH & UI INIT
 // ============================================
 const token = localStorage.getItem('token');
 const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -131,6 +193,11 @@ if (!token) location.href = '/login';
 
 document.getElementById('credits').textContent     = user.credits || 0;
 document.getElementById('maxSessions').textContent = user.maxSessions || 3;
+if (user.name) {
+    document.getElementById('userNameDisplay').textContent = user.name;
+} else if (user.email) {
+    document.getElementById('userNameDisplay').textContent = user.email.split('@')[0];
+}
 
 async function loadUserCredits() {
     try {
