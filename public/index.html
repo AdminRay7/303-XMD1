@@ -10,80 +10,173 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔑</text></svg>">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <link rel="stylesheet" href="/theme.css">
+<style>
+    /* Cyberdark Overrides */
+    body { background: #09090b; color: #f4f4f5; }
+    .hero { background: radial-gradient(circle at top, rgba(0,229,160,0.1) 0%, transparent 60%); padding-top: 40px; }
+    .hero h1 { font-size: 40px; font-weight: 800; }
+    .hero h1 span { color: #00e5a0; }
+    
+    .cyber-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 600px; margin: 30px auto; padding: 0 20px; }
+    .cyber-stat-card { background: #18181b; border: 1px solid #27272a; border-radius: 16px; padding: 20px; text-align: center; }
+    .cyber-stat-card h3 { color: #00e5a0; font-size: 28px; font-weight: 800; margin: 0 0 4px 0; }
+    .cyber-stat-card p { color: #a1a1aa; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin: 0; }
+
+    .cyber-feature-card { background: #18181b; border: 1px solid #27272a; border-radius: 16px; padding: 24px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px; transition: 0.2s; }
+    .cyber-feature-card:hover { border-color: #00e5a0; transform: translateY(-2px); }
+    .cyber-feature-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; background: rgba(0,229,160,0.1); color: #00e5a0; }
+    .cyber-feature-card h3 { color: #fff; font-size: 16px; margin: 0; }
+    .cyber-feature-card p { color: #a1a1aa; font-size: 13px; margin: 0; line-height: 1.5; }
+
+    .btn-hero-main { background: linear-gradient(90deg, #00e5a0, #7b2ff7); color: #fff; border: none; padding: 14px 32px; border-radius: 10px; cursor: pointer; text-decoration: none; font-weight: 700; font-size: 16px; display: inline-flex; align-items: center; gap: 8px; transition: 0.2s; width: 100%; max-width: 300px; justify-content: center; }
+    .btn-hero-sub { background: #18181b; border: 1px solid #27272a; color: #fff; padding: 14px 32px; border-radius: 10px; cursor: pointer; text-decoration: none; font-weight: 600; font-size: 16px; display: inline-flex; align-items: center; justify-content: center; width: 100%; max-width: 300px; transition: 0.2s; }
+</style>
 </head>
 <body class="theme-landing landing-body">
 
 <div class="landing-wrap">
     <nav class="landing-nav">
-        <div class="landing-nav-brand"><i class="fas fa-key"></i> 303-XMD</div>
+        <div class="landing-nav-brand"><i class="fas fa-key" style="color:#00e5a0"></i> 303-XMD</div>
         <div class="landing-nav-links">
             <a href="#features">Features</a>
             <a href="#how">How</a>
             <a href="#deploy">Deploy</a>
             <a href="/login" class="btn btn-ghost">Login</a>
-            <a href="/register" class="btn btn-primary">Get Started</a>
+            <a href="/register" class="btn btn-primary" style="background:#00e5a0; color:#000; font-weight:bold;">Create Account</a>
         </div>
     </nav>
 
     <section class="hero">
-        <div class="hero-logo"><i class="fas fa-key"></i></div>
-        <h1>303-XMD</h1>
-        <div class="tagline">The Last Key</div>
-        <p class="lead">
+        <div class="hero-logo" style="background: rgba(0,229,160,0.1); color: #00e5a0; border-radius: 20px; width: 80px; height: 80px; display: inline-flex; align-items: center; justify-content: center; font-size: 36px; margin-bottom: 20px;"><i class="fas fa-key"></i></div>
+        <h1>Enter the <span>303-XMD</span> Realm</h1>
+        <div class="tagline" style="color: #a1a1aa; font-size: 14px; margin-bottom: 12px; font-weight: 600; letter-spacing: 1px;">THE LAST KEY</div>
+        <p class="lead" style="color: #a1a1aa; font-size: 16px; max-width: 600px; margin: 0 auto 30px;">
             A fast, private WhatsApp automation bot with pairing panel, session management,
             and a full command suite. Built for users who want control.
         </p>
-        <div class="hero-actions">
-            <a href="/register" class="btn btn-primary"><i class="fas fa-rocket"></i> Get Started Free</a>
-            <a href="/login" class="btn btn-ghost"><i class="fas fa-right-to-bracket"></i> Login</a>
+        <div class="hero-actions" style="display:flex; justify-content:center; gap:16px; flex-wrap:wrap;">
+            <a href="/register" class="btn-hero-main"><i class="fas fa-rocket"></i> Get Started Free</a>
+            <a href="/login" class="btn-hero-sub"><i class="fas fa-right-to-bracket"></i> Login</a>
         </div>
     </section>
 
-    <section id="features">
-        <div class="section-head">
-            <h2>Features</h2>
-            <p>Everything you need in one bot</p>
+    <!-- Live Stats -->
+    <section class="cyber-stats">
+        <div class="cyber-stat-card">
+            <h3 id="stat-users">0+</h3>
+            <p>Users</p>
         </div>
-        <div class="feature-grid">
-            <div class="feature-card"><i class="fas fa-link"></i><h3>Easy Pairing</h3><p>Pair any WhatsApp number with a simple 8-digit code. No QR required.</p></div>
-            <div class="feature-card"><i class="fas fa-shield-halved"></i><h3>Security</h3><p>Antidelete, antibug, antispam, antilink — full protection suite.</p></div>
-            <div class="feature-card"><i class="fas fa-download"></i><h3>Media Tools</h3><p>Download songs, stickers, view-once reveal, and more.</p></div>
-            <div class="feature-card"><i class="fas fa-users"></i><h3>Group Admin</h3><p>Promote, demote, kick, warn, tag all — full group control.</p></div>
-            <div class="feature-card"><i class="fas fa-key"></i><h3>Multi-Session</h3><p>Run multiple WhatsApp accounts from a single deployment.</p></div>
-            <div class="feature-card"><i class="fas fa-bolt"></i><h3>Fast & Light</h3><p>Built on Baileys for speed. Runs on small servers.</p></div>
+        <div class="cyber-stat-card">
+            <h3 id="stat-sessions">0+</h3>
+            <p>Sessions</p>
         </div>
-    </section>
-
-    <section id="how">
-        <div class="section-head">
-            <h2>How it works</h2>
-            <p>Four steps to go live</p>
+        <div class="cyber-stat-card">
+            <h3 id="stat-active">0+</h3>
+            <p>Active Bots</p>
         </div>
-        <div class="feature-grid">
-            <div class="feature-card"><i class="fas fa-1"></i><h3>Create account</h3><p>Sign up with your email. Free, takes 10 seconds.</p></div>
-            <div class="feature-card"><i class="fas fa-2"></i><h3>Get a code</h3><p>Enter your WhatsApp number on the dashboard.</p></div>
-            <div class="feature-card"><i class="fas fa-3"></i><h3>Link & go live</h3><p>Enter the code in WhatsApp → Linked Devices.</p></div>
-            <div class="feature-card"><i class="fas fa-4"></i><h3>Manage sessions</h3><p>Reconnect, disconnect, and manage from the dashboard.</p></div>
+        <div class="cyber-stat-card">
+            <h3>24/7</h3>
+            <p>Uptime</p>
         </div>
     </section>
 
-    <section id="deploy" style="text-align:center;margin-bottom:60px">
-        <div class="section-head">
-            <h2>Deploy your own</h2>
-            <p>Clone the repo and run it anywhere</p>
+    <section id="features" style="padding: 0 20px; margin-bottom: 60px;">
+        <div class="section-head" style="text-align:center; margin-bottom: 30px;">
+            <h2 style="color:#fff; font-size:24px;">What's Inside</h2>
+            <p style="color:#a1a1aa; font-size:14px;">Everything you need in one bot</p>
         </div>
-        <a href="https://github.com/AdminRay7/303-XMD1" target="_blank" class="btn btn-primary">
+        <div class="feature-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px; max-width:800px; margin:0 auto;">
+            <div class="cyber-feature-card">
+                <div class="cyber-feature-icon"><i class="fas fa-link"></i></div>
+                <h3>Easy Pairing</h3>
+                <p>Pair any WhatsApp number with a simple 8-digit code. No QR required.</p>
+            </div>
+            <div class="cyber-feature-card">
+                <div class="cyber-feature-icon"><i class="fas fa-shield-halved"></i></div>
+                <h3>Security</h3>
+                <p>Antidelete, antibug, antispam, antilink — full protection suite.</p>
+            </div>
+            <div class="cyber-feature-card">
+                <div class="cyber-feature-icon"><i class="fas fa-download"></i></div>
+                <h3>Media Tools</h3>
+                <p>Download songs, stickers, view-once reveal, and more.</p>
+            </div>
+            <div class="cyber-feature-card">
+                <div class="cyber-feature-icon"><i class="fas fa-users"></i></div>
+                <h3>Group Admin</h3>
+                <p>Promote, demote, kick, warn, tag all — full group control.</p>
+            </div>
+            <div class="cyber-feature-card">
+                <div class="cyber-feature-icon"><i class="fas fa-key"></i></div>
+                <h3>Multi-Session</h3>
+                <p>Run multiple WhatsApp accounts from a single deployment.</p>
+            </div>
+            <div class="cyber-feature-card">
+                <div class="cyber-feature-icon"><i class="fas fa-bolt"></i></div>
+                <h3>Fast & Light</h3>
+                <p>Built on Baileys for speed. Runs on small servers.</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="how" style="padding: 0 20px; margin-bottom: 60px;">
+        <div class="section-head" style="text-align:center; margin-bottom: 30px;">
+            <h2 style="color:#fff; font-size:24px;">How it works</h2>
+            <p style="color:#a1a1aa; font-size:14px;">Four steps to go live</p>
+        </div>
+        <div class="feature-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px; max-width:800px; margin:0 auto;">
+            <div class="cyber-feature-card">
+                <div class="cyber-feature-icon" style="background:rgba(234,179,8,0.1); color:#eab308"><i class="fas fa-1"></i></div>
+                <h3>Create account</h3>
+                <p>Sign up with your email. Free, takes 10 seconds.</p>
+            </div>
+            <div class="cyber-feature-card">
+                <div class="cyber-feature-icon" style="background:rgba(59,130,246,0.1); color:#3b82f6"><i class="fas fa-2"></i></div>
+                <h3>Get a code</h3>
+                <p>Enter your WhatsApp number on the dashboard.</p>
+            </div>
+            <div class="cyber-feature-card">
+                <div class="cyber-feature-icon" style="background:rgba(0,229,160,0.1); color:#00e5a0"><i class="fas fa-3"></i></div>
+                <h3>Link & go live</h3>
+                <p>Enter the code in WhatsApp → Linked Devices.</p>
+            </div>
+            <div class="cyber-feature-card">
+                <div class="cyber-feature-icon" style="background:rgba(123,47,247,0.1); color:#7b2ff7"><i class="fas fa-4"></i></div>
+                <h3>Manage sessions</h3>
+                <p>Reconnect, disconnect, and manage from the dashboard.</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="deploy" style="text-align:center;margin-bottom:60px; padding: 0 20px;">
+        <div class="section-head" style="margin-bottom: 20px;">
+            <h2 style="color:#fff; font-size:24px;">Deploy your own</h2>
+            <p style="color:#a1a1aa; font-size:14px;">Clone the repo and run it anywhere</p>
+        </div>
+        <a href="https://github.com/AdminRay7/303-XMD1" target="_blank" class="btn btn-primary" style="background:#00e5a0; color:#000; font-weight:bold; padding: 12px 24px; border-radius: 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 8px;">
             <i class="fas fa-rocket"></i> View on GitHub
         </a>
     </section>
 
-    <div class="landing-footer">
-        DEVELOPED BY <a href="https://wa.me/254794376595">MR PRESENTER</a> © 2025
+    <div class="landing-footer" style="text-align: center; color: #a1a1aa; font-size: 12px; margin-bottom: 40px;">
+        DEVELOPED BY <a href="https://wa.me/254794376595" style="color:#00e5a0; text-decoration: none;">MR PRESENTER</a> © 2025
     </div>
 </div>
 
-<!-- SERVICE WORKER REGISTRATION -->
+<!-- SERVICE WORKER REGISTRATION & STATS FETCH -->
 <script>
+  // Fetch live stats
+  fetch('/api/stats')
+    .then(res => res.json())
+    .then(data => {
+        if (data) {
+            document.getElementById('stat-users').textContent = (data.accounts || 0) + '+';
+            document.getElementById('stat-sessions').textContent = (data.totalSessions || 0) + '+';
+            document.getElementById('stat-active').textContent = (data.activeSessions || 0) + '+';
+        }
+    })
+    .catch(err => console.log('Stats fetch error:', err));
+
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/service-worker.js')
