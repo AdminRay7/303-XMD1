@@ -5,6 +5,10 @@ const ffmpeg = require('fluent-ffmpeg');
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 const { fancy } = require('../lib/font');
 
+// Tell fluent-ffmpeg where to find the binary on Heroku
+// Most buildpacks install it to /usr/bin/ffmpeg
+ffmpeg.setFfmpegPath('/usr/bin/ffmpeg');
+
 module.exports = {
     name: 'voice',
     aliases: ['audiofx', 'robot', 'chipmunk', 'deep'],
@@ -13,7 +17,6 @@ module.exports = {
     async execute(conn, msg, args, ctx) {
         const { from, command } = ctx;
 
-        // 1. Check if they replied to an audio message
         const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         if (!quoted || (!quoted.audioMessage && !quoted.ptvMessage)) {
             return conn.sendMessage(from, { 
@@ -21,7 +24,6 @@ module.exports = {
             }, { quoted: msg });
         }
 
-        // 2. Set the effect based on the command
         let filter = '';
         if (command === 'robot') {
             filter = 'asetrate=44100*0.8,atempo=1.25,highpass=f=200,lowpass=f=3000';
@@ -38,38 +40,39 @@ module.exports = {
         try {
             await conn.sendMessage(from, { react: { text: '⏳', key: msg.key } });
 
-            // 3. Download the audio
             const audioMsg = quoted.audioMessage || quoted.ptvMessage;
             const stream = await downloadContentFromMessage(audioMsg, 'audio');
             const chunks = [];
             for await (const chunk of stream) chunks.push(chunk);
             const audioBuffer = Buffer.concat(chunks);
 
-            // 4. Save temporary files
             const inputPath = path.join(__dirname, `../temp_in_${Date.now()}.ogg`);
             const outputPath = path.join(__dirname, `../temp_out_${Date.now()}.ogg`);
             fs.writeFileSync(inputPath, audioBuffer);
 
-            // 5. Process with FFmpeg (100% local, no API)
+            // Run FFmpeg with error logging
             await new Promise((resolve, reject) => {
                 ffmpeg(inputPath)
                     .audioFilters(filter)
                     .toFormat('ogg')
+                    .on('start', (cmd) => console.log('[FFmpeg] Started:', cmd))
+                    .on('stderr', (stderr) => console.log('[FFmpeg] stderr:', stderr))
                     .on('end', resolve)
-                    .on('error', reject)
+                    .on('error', (err) => {
+                        console.error('[FFmpeg] Error:', err.message);
+                        reject(err);
+                    })
                     .save(outputPath);
             });
 
             const processedBuffer = fs.readFileSync(outputPath);
 
-            // 6. Send the new voice note
             await conn.sendMessage(from, { 
                 audio: processedBuffer, 
                 mimetype: 'audio/ogg; codecs=opus', 
                 ptt: true 
             }, { quoted: msg });
 
-            // Clean up
             fs.unlinkSync(inputPath);
             fs.unlinkSync(outputPath);
 
