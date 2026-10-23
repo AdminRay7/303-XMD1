@@ -446,9 +446,6 @@ module.exports = async (conn, m, userId = "default") => {
             if (!aiOn) return;
             if (isGroup && !groupsOn) return;
 
-            // REMOVED the hardcoded sysPrompt here. 
-            // aiChat.js now dynamically handles the 303-XMD identity and command list.
-
             // ---------- VOICE NOTE AI ----------
             if (type === "audioMessage" && msg.message.audioMessage?.ptt) {
                 try {
@@ -476,7 +473,6 @@ module.exports = async (conn, m, userId = "default") => {
                         if (context) prompt = `You are chatting in a WhatsApp group. Recent messages:\n\n${context}\n\nReply naturally to the latest message. Short and casual. Match the language.`;
                     }
 
-                    // No custom prompt passed, so it uses the dynamic one
                     const reply = await aiChat.askAI(prompt, userId, null);
 
                     if (reply) {
@@ -517,7 +513,6 @@ module.exports = async (conn, m, userId = "default") => {
                     await new Promise(r => setTimeout(r, delay));
                     const caption = (msg.message.imageMessage?.caption || "").trim();
                     
-                    // Pass null for custom prompt so vision also uses the 303-XMD identity
                     const reply = await aiVision.describePhoto(buffer, "image/jpeg", caption, null);
                     
                     if (reply) await conn.sendMessage(from, { text: reply }, { quoted: msg });
@@ -528,6 +523,35 @@ module.exports = async (conn, m, userId = "default") => {
             if (type === "conversation" || type === "extendedTextMessage") {
                 if (!body || !body.trim()) return;
                 if (humanChat.hasReplied(msg.key.id)) return;
+                
+                // ============================================================
+                //   AUTOMATIC BIBLE DETECTION
+                // ============================================================
+                let finalPrompt = body;
+                const bibleRegex = /\b(1|2|3)?\s?(Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|Samuel|Kings|Chronicles|Ezra|Nehemiah|Esther|Job|Psalms?|Proverbs?|Ecclesiastes|Song of Solomon|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|Corinthians|Galatians|Ephesians|Philippians|Colossians|Thessalonians|Timothy|Titus|Philemon|Hebrews|James|Peter|Jude|Revelation)\s?\d+:\d+(-\d+)?\b/i;
+                
+                const bibleMatch = body.match(bibleRegex);
+                
+                if (bibleMatch) {
+                    try {
+                        const reference = bibleMatch[0];
+                        const apiUrl = `https://bible-api.com/${encodeURIComponent(reference)}?translation=niv`; 
+                        const bibleRes = await axios.get(apiUrl);
+                        
+                        if (bibleRes.data && bibleRes.data.text) {
+                            finalPrompt = `The user mentioned the Bible verse "${reference}". 
+Here is the exact text from the ${bibleRes.data.translation_name}:
+"${bibleRes.data.text.trim()}"
+
+User's original message: ${body}
+Instruction: Acknowledge their verse and respond naturally using the exact text provided above. Keep it casual.`;
+                        }
+                    } catch (err) {
+                        console.error("[Bible Auto-Fetch] API error:", err.message);
+                    }
+                }
+                // ============================================================
+
                 const stored = aiVision.getSessionImage(from);
                 if (config.autoTyping) { try { await conn.sendPresenceUpdate('composing', from); } catch {} }
                 const delay = isGroup ? 800 + Math.floor(Math.random() * 700) : 300;
@@ -535,19 +559,17 @@ module.exports = async (conn, m, userId = "default") => {
                 try {
                     let reply;
                     if (stored && stored.buffer) {
-                        // Pass null for custom prompt
-                        reply = await aiVision.answerAboutPhoto(stored.buffer, stored.mime, body, null);
+                        reply = await aiVision.answerAboutPhoto(stored.buffer, stored.mime, finalPrompt, null);
                         aiVision.setSessionImage(from, stored.buffer, stored.mime);
                     } else {
-                        let prompt = body;
+                        let prompt = finalPrompt;
                         if (isGroup) {
                             humanChat.pushContext(from, pushname || sender.split("@")[0], body);
                             const context = humanChat.getContext(from, 15);
                             if (context) {
-                                prompt = `You are chatting in a WhatsApp group. Recent messages:\n\n${context}\n\nReply naturally to the latest message. Short and casual. Match the language.`;
+                                prompt = `You are chatting in a WhatsApp group. Recent messages:\n\n${context}\n\n${finalPrompt}\n\nReply naturally. Short and casual. Match the language.`;
                             }
                         }
-                        // Pass null for custom prompt
                         reply = await aiChat.askAI(prompt, userId, null);
                     }
                     if (reply) {
