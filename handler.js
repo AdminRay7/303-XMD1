@@ -6,7 +6,7 @@ const path = require('path');
 const axios = require('axios');
 const config = require('./config');
 const { fancy } = require('./lib/font');
-const { User, ChannelSubscriber, ChannelPost, SessionSettings } = require('./database/models'); // Added SessionSettings
+const { User, ChannelSubscriber, ChannelPost, SessionSettings } = require('./database/models'); 
 const messageStore = require('./lib/messageStore');
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 const analytics = require('./lib/analytics');
@@ -446,8 +446,8 @@ module.exports = async (conn, m, userId = "default") => {
             if (!aiOn) return;
             if (isGroup && !groupsOn) return;
 
-            const sysPrompt = config.aiSystemPrompt
-                || "You are a normal person chatting on WhatsApp. Keep replies short, casual, human. Use emojis occasionally. Never mention you're an AI. Match the language the person uses. No markdown, no bullet points.";
+            // REMOVED the hardcoded sysPrompt here. 
+            // aiChat.js now dynamically handles the 303-XMD identity and command list.
 
             // ---------- VOICE NOTE AI ----------
             if (type === "audioMessage" && msg.message.audioMessage?.ptt) {
@@ -476,7 +476,8 @@ module.exports = async (conn, m, userId = "default") => {
                         if (context) prompt = `You are chatting in a WhatsApp group. Recent messages:\n\n${context}\n\nReply naturally to the latest message. Short and casual. Match the language.`;
                     }
 
-                    const reply = await aiChat.askAI(prompt, userId, sysPrompt);
+                    // No custom prompt passed, so it uses the dynamic one
+                    const reply = await aiChat.askAI(prompt, userId, null);
 
                     if (reply) {
                         const finalReply = isGroup ? humanChat.humanize(reply) : reply;
@@ -515,7 +516,10 @@ module.exports = async (conn, m, userId = "default") => {
                     const delay = isGroup ? 900 + Math.floor(Math.random() * 800) : 500;
                     await new Promise(r => setTimeout(r, delay));
                     const caption = (msg.message.imageMessage?.caption || "").trim();
-                    const reply = await aiVision.describePhoto(buffer, "image/jpeg", caption, sysPrompt);
+                    
+                    // Pass null for custom prompt so vision also uses the 303-XMD identity
+                    const reply = await aiVision.describePhoto(buffer, "image/jpeg", caption, null);
+                    
                     if (reply) await conn.sendMessage(from, { text: reply }, { quoted: msg });
                 } catch (e) { console.error("[vision] photo error:", e.message); }
                 return;
@@ -531,7 +535,8 @@ module.exports = async (conn, m, userId = "default") => {
                 try {
                     let reply;
                     if (stored && stored.buffer) {
-                        reply = await aiVision.answerAboutPhoto(stored.buffer, stored.mime, body, sysPrompt);
+                        // Pass null for custom prompt
+                        reply = await aiVision.answerAboutPhoto(stored.buffer, stored.mime, body, null);
                         aiVision.setSessionImage(from, stored.buffer, stored.mime);
                     } else {
                         let prompt = body;
@@ -542,7 +547,8 @@ module.exports = async (conn, m, userId = "default") => {
                                 prompt = `You are chatting in a WhatsApp group. Recent messages:\n\n${context}\n\nReply naturally to the latest message. Short and casual. Match the language.`;
                             }
                         }
-                        reply = await aiChat.askAI(prompt, userId, sysPrompt);
+                        // Pass null for custom prompt
+                        reply = await aiChat.askAI(prompt, userId, null);
                     }
                     if (reply) {
                         if (isGroup) reply = humanChat.humanize(reply);
