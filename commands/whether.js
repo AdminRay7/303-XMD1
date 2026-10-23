@@ -1,46 +1,63 @@
 // commands/weather.js
-// Get the weather for a city.
-// Usage: .weather Nairobi
-
 const axios = require('axios');
 const { fancy } = require('../lib/font');
-const config = require('../config');
 
 module.exports = {
     name: 'weather',
+    aliases: ['climate', 'forecast'],
     category: 'tools',
-    aliases: ['temp'],
-    description: 'Get weather for a city',
+    description: 'Get the current weather for a city',
     async execute(conn, msg, args, ctx) {
         const { from } = ctx;
-        const city = args.join(' ');
+        const city = args.join(' ').trim();
 
         if (!city) {
-            return conn.sendMessage(from, { text: fancy(`Usage: ${config.prefix}weather <city>`) }, { quoted: msg });
+            return conn.sendMessage(from, { 
+                text: fancy('❌ Please provide a city name.\nExample: .weather Nairobi') 
+            }, { quoted: msg });
+        }
+
+        // Get the key from .env
+        const apiKey = process.env.WEATHER_API_KEY;
+        if (!apiKey) {
+            return conn.sendMessage(from, { 
+                text: fancy('❌ Weather API key is missing in the server .env file.') 
+            }, { quoted: msg });
         }
 
         try {
-            // wttr.in is a free weather API. format=j1 returns JSON.
-            const url = `https://wttr.in/${encodeURIComponent(city)}?format=j1`;
-            const { data } = await axios.get(url, { timeout: 10000 });
+            // Call WeatherAPI
+            const url = `https://api.weatherapi.com/v1/current.json?key=${apiKey}&q=${encodeURIComponent(city)}&aqi=no`;
+            const { data } = await axios.get(url);
 
-            const current = data.current_condition[0];
-            const temp = current.temp_C;
-            const feelsLike = current.FeelsLikeC;
-            const desc = current.weatherDesc[0].value;
-            const humidity = current.humidity;
-            const wind = current.windspeedKmph;
+            // Format the reply
+            const weatherText = `
+🌍 *Weather for ${data.location.name}, ${data.location.country}*
 
-            const text = `🌍 *Weather in ${city.toUpperCase()}*\n\n` +
-                         `🌡️ *Temp:* ${temp}°C (Feels like ${feelsLike}°C)\n` +
-                         `☁️ *Condition:* ${desc}\n` +
-                         `💧 *Humidity:* ${humidity}%\n` +
-                         `💨 *Wind:* ${wind} km/h`;
+🌡️ *Temperature:* ${data.current.temp_c}°C (${data.current.temp_f}°F)
+☁️ *Condition:* ${data.current.condition.text}
+💨 *Wind:* ${data.current.wind_kph} km/h (${data.current.wind_dir})
+💧 *Humidity:* ${data.current.humidity}%
+👁️ *Visibility:* ${data.current.vis_km} km
 
-            await conn.sendMessage(from, { text: fancy(text) }, { quoted: msg });
-        } catch (e) {
-            console.error('[weather] error:', e.message);
-            await conn.sendMessage(from, { text: fancy(`❌ Could not get weather for "${city}". Check the spelling.`) }, { quoted: msg });
+_Last updated: ${data.current.last_updated}_
+            `.trim();
+
+            await conn.sendMessage(from, { text: weatherText }, { quoted: msg });
+
+        } catch (error) {
+            console.error('[weather command] Error:', error.message);
+            
+            // Handle city not found error nicely
+            if (error.response && error.response.status === 400) {
+                return conn.sendMessage(from, { 
+                    text: fancy(`❌ Could not find a city named "${city}".`) 
+                }, { quoted: msg });
+            }
+
+            await conn.sendMessage(from, { 
+                text: fancy('❌ Failed to fetch weather data. Please try again later.') 
+            }, { quoted: msg });
         }
     }
 };
