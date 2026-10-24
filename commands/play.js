@@ -1,112 +1,82 @@
 // commands/play.js
-// Hardcoded — no env dependency. Downloads MP3 to buffer before sending.
-// Usage: .play <song name or youtube URL>
-
 const axios = require('axios');
 const { fancy } = require('../lib/font');
-const config = require('../config');
-
-const RAPIDAPI_KEY    = 'eae3a83c15msh69a6323638e111fp1cfb10jsna8bbd4863ac0';
-const RAPIDAPI_HOST   = 'youtube-mp36.p.rapidapi.com';
-const SEARCH_API_HOST = 'youtube-v31.p.rapidapi.com';
-
-function extractVideoId(input) {
-    if (!input) return null;
-    const urlMatch = input.match(/(?:youtu\.be\/|youtube\.com\/(?:.*v=|.*\/))([A-Za-z0-9_-]{11})/);
-    if (urlMatch) return urlMatch[1];
-    if (/^[A-Za-z0-9_-]{11}$/.test(input.trim())) return input.trim();
-    return null;
-}
-
-async function searchYouTube(query) {
-    const { data } = await axios.get(
-        `https://${SEARCH_API_HOST}/search`,
-        {
-            params: { q: query, part: 'snippet', maxResults: 1, type: 'video' },
-            headers: {
-                'X-RapidAPI-Key': RAPIDAPI_KEY,
-                'X-RapidAPI-Host': SEARCH_API_HOST
-            },
-            timeout: 15000
-        }
-    );
-    return data?.items?.[0]?.id?.videoId || null;
-}
-
-async function fetchMP3(videoId) {
-    const url = `https://${RAPIDAPI_HOST}/dl?id=${videoId}`;
-    const { data } = await axios.get(url, {
-        headers: {
-            'X-RapidAPI-Key': RAPIDAPI_KEY,
-            'X-RapidAPI-Host': RAPIDAPI_HOST
-        },
-        timeout: 30000
-    });
-    if (data.status !== 'ok' || !data.link) {
-        throw new Error(data.msg || 'Download failed');
-    }
-    return data;
-}
-
-// Download MP3 bytes to a Buffer first — avoids Baileys fetch 404
-async function downloadToBuffer(mp3Url) {
-    const res = await axios.get(mp3Url, {
-        responseType: 'arraybuffer',
-        timeout: 60000,
-        headers: { 'User-Agent': 'Mozilla/5.0' },
-        maxRedirects: 5
-    });
-    return Buffer.from(res.data);
-}
 
 module.exports = {
     name: 'play',
-    category: 'download',
-    aliases: ['mp3', 'music'],
-    description: 'Download a song as MP3',
+    aliases: ['song', 'audio'],
+    category: 'downloads',
+    description: 'Search and download a song as MP3',
     async execute(conn, msg, args, ctx) {
         const { from } = ctx;
         const query = args.join(' ').trim();
 
         if (!query) {
-            return conn.sendMessage(from, {
-                text: fancy(`Usage: ${config.prefix}play <song name or youtube URL>`)
+            return conn.sendMessage(from, { 
+                text: fancy('❌ Please provide a song name.\nExample: .play Fada Fada') 
             }, { quoted: msg });
         }
 
-        const wait = await conn.sendMessage(from, { text: fancy('🔎 Searching...') }, { quoted: msg });
+        const apiKey = process.env.TOOSII_API_KEY;
+        if (!apiKey) {
+            return conn.sendMessage(from, { 
+                text: fancy('❌ TOOSII_API_KEY is missing in the .env file.') 
+            }, { quoted: msg });
+        }
 
         try {
-            let videoId = extractVideoId(query);
-            if (!videoId) videoId = await searchYouTube(query);
-            if (!videoId) throw new Error('No results found');
+            await conn.sendMessage(from, { react: { text: '🔍', key: msg.key } });
 
-            await conn.sendMessage(from, { text: fancy('⬇️ Downloading MP3...'), edit: wait.key });
+            // Step 1: Search YouTube
+            const searchUrl = `https://toosiitechdevelopertools.zone.id/api/search/youtube?query=${encodeURIComponent(query)}`;
+            const searchRes = await axios.get(searchUrl, {
+                headers: { 'Authorization': `Bearer ${apiKey}` },
+                timeout: 15000
+            });
 
-            const info = await fetchMP3(videoId);
-            const sizeMB = (info.filesize / 1024 / 1024).toFixed(2);
-            const mins = Math.floor(info.duration / 60);
-            const secs = Math.floor(info.duration % 60);
+            // We need to figure out the exact structure of the response. 
+            // It's usually data.results[0].url or data.results[0].id
+            let videoUrl = '';
+            if (searchRes.data && searchRes.data.data && searchRes.data.data.length > 0) {
+                videoUrl = searchRes.data.data[0].url || `https://www.youtube.com/watch?v=${searchRes.data.data[0].videoId}`;
+            } else if (searchRes.data && searchRes.data.results && searchRes.data.results.length > 0) {
+                videoUrl = searchRes.data.results[0].url || `https://www.youtube.com/watch?v=${searchRes.data.results[0].videoId}`;
+            } else {
+                throw new Error("No search results found.");
+            }
 
-            await conn.sendMessage(from, { text: fancy('📤 Uploading...'), edit: wait.key });
+            await conn.sendMessage(from, { react: { text: '⬇️', key: msg.key } });
 
-            // Fetch bytes ourselves → send buffer
-            const buffer = await downloadToBuffer(info.link);
+            // Step 2: Download Audio
+            // Assuming the API takes the URL to download
+            const downloadUrl = `https://toosiitechdevelopertools.zone.id/api/download/audio?url=${encodeURIComponent(videoUrl)}`;
+            const downloadRes = await axios.get(downloadUrl, {
+                headers: { 'Authorization': `Bearer ${apiKey}` },
+                timeout: 30000
+            });
 
+            // Usually, download APIs return a direct link to the MP3
+            const mp3Url = downloadRes.data.downloadUrl || downloadRes.data.url || downloadRes.data.link;
+
+            if (!mp3Url) {
+                throw new Error("API did not return a download link.");
+            }
+
+            // Send the audio to WhatsApp
             await conn.sendMessage(from, {
-                audio: buffer,
-                mimetype: 'audio/mpeg',
-                fileName: `${info.title}.mp3`,
+                audio: { url: mp3Url },
+                mimetype: 'audio/mp4',
                 ptt: false
             }, { quoted: msg });
 
-            await conn.sendMessage(from, {
-                text: fancy(`🎵 *${info.title}*\n⏱️ ${mins}:${String(secs).padStart(2, '0')}  •  📦 ${sizeMB} MB`)
-            }, { quoted: msg });
+            await conn.sendMessage(from, { react: { text: '✅', key: msg.key } });
 
-        } catch (e) {
-            console.error('[play] error:', e.message);
-            await conn.sendMessage(from, { text: fancy(`❌ Failed: ${e.message}`), edit: wait.key });
+        } catch (error) {
+            console.error('[play command] Error:', error.response?.data || error.message);
+            await conn.sendMessage(from, { 
+                text: fancy(`❌ Failed to download song. Error: ${error.message}`) 
+            }, { quoted: msg });
+            await conn.sendMessage(from, { react: { text: '❌', key: msg.key } });
         }
     }
 };
