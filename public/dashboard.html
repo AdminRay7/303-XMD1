@@ -203,10 +203,10 @@ async function loadUserCredits() {
     try {
         const res = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + token } });
         const data = await res.json();
-        
+
         if (data.success) {
             const user = data.user;
-            
+
             // If Admin, hide the credit banner entirely
             if (user.isAdmin) {
                 document.getElementById('creditBanner').style.display = 'none';
@@ -284,10 +284,25 @@ submitBtn.onclick = async () => {
     submitBtn.innerHTML = '<span class="skeleton"></span> Generating…';
 
     try {
-        const r = await fetch(`/api/pair?sessionId=${encodeURIComponent(sessionId)}&num=${encodeURIComponent(num)}`, {
+        // FIXED: Send POST request with JSON body instead of GET query params
+        const r = await fetch('/api/pair', {
+            method: 'POST',
             cache: 'no-store',
-            headers: { 'Authorization': 'Bearer ' + token }
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ sessionId, num })
         });
+
+        // FIXED: Guard against HTML error pages (like Heroku 503s)
+        const ct = r.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) {
+            const raw = await r.text();
+            const cleanErr = raw.replace(/<[^>]+>/g, '').trim().slice(0, 100);
+            throw new Error(`Server error (${r.status}): ${cleanErr || 'Invalid response'}`);
+        }
+
         const data = await r.json();
         if (!r.ok || data.error) throw new Error(data.error || 'Pairing failed');
         if (!data.code) throw new Error('No pairing code returned');
@@ -296,7 +311,11 @@ submitBtn.onclick = async () => {
         step2.style.display = 'block';
         codeBox.innerText = data.code;
         showToast('Code generated!');
-        loadUserCredits(); // Refresh credits after deducting
+        
+        // Refresh credits and sessions
+        loadUserCredits(); 
+        loadSessions(); 
+
     } catch (e) {
         errBox.innerText = e.message;
         errBox.classList.add('show');
