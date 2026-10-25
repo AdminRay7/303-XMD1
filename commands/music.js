@@ -4,78 +4,71 @@ module.exports = {
     name: 'play',
     aliases: ['song', 'music', 'audio'],
     category: 'download',
-    description: 'Search and download songs using Toosii Tech API',
+    description: 'Download songs using Toosii Tech API',
     async execute(conn, msg, args, ctx) {
         const from = msg.key.remoteJid;
         const query = args.join(' ');
 
         if (!query) {
-            return conn.sendMessage(from, { text: '❌ Please provide a song name.\nExample: `.play Faded Alan Walker`' }, { quoted: msg });
+            return conn.sendMessage(from, { text: '❌ Please provide a song name.\nExample: `.music yatapita`' }, { quoted: msg });
         }
 
-        await conn.sendMessage(from, { react: { text: '🔍', key: msg.key } });
+        await conn.sendMessage(from, { react: { text: '⏳', key: msg.key } });
         
         try {
             const apiKey = process.env.TOOSII_TOKEN;
             if (!apiKey) throw new Error("TOOSII_TOKEN is missing from .env");
             
-            const headers = { 'Authorization': `Bearer ${apiKey}` };
-            const baseUrl = 'https://toosiitechdevelopertools.zone.id';
+            const headers = { 
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            };
 
-            // 1. SEARCH YOUTUBE for the song URL
-            // (Note: We are guessing the exact parameter name is 'query' or 'q' based on standard APIs)
-            let searchUrl = `${baseUrl}/api/search/youtube?query=${encodeURIComponent(query)}`;
-            let searchRes = await axios.get(searchUrl, { headers });
-            
-            let videoUrl = null;
-            let title = query;
+            // We will use a temporary valid YouTube link just to test if the API works.
+            // Since the search API is failing, we can't search by text yet.
+            const testYouTubeUrl = 'https://www.youtube.com/watch?v=60ItHLz5WEA'; // Alan Walker - Faded
 
-            // Attempt to extract the URL from the search response
-            const searchData = searchRes.data;
-            if (searchData && searchData.result) {
-                // Adjust this based on how the API returns the search results
-                videoUrl = searchData.result.url || searchData.result[0]?.url || searchData.result[0]?.link;
-                title = searchData.result.title || searchData.result[0]?.title || query;
-            } else if (searchData && searchData.data) {
-                videoUrl = searchData.data.url || searchData.data[0]?.url || searchData.data[0]?.link;
-                title = searchData.data.title || searchData.data[0]?.title || query;
+            // 1. TRY POST REQUEST (Since GET gave a 405 error)
+            let downloadRes;
+            try {
+                // Attempt POST with the link in the body
+                downloadRes = await axios.post(`https://toosiitechdevelopertools.zone.id/api/download/audio`, { url: testYouTubeUrl }, { headers });
+            } catch (postErr) {
+                // If POST fails, try GET one more time with a 'link' parameter instead of 'url'
+                downloadRes = await axios.get(`https://toosiitechdevelopertools.zone.id/api/download/audio?link=${encodeURIComponent(testYouTubeUrl)}`, { headers });
             }
-
-            // If the search failed to find a URL, stop here
-            if (!videoUrl) {
-                throw new Error("Could not find a YouTube URL for that song. The API response format might be different.");
-            }
-
-            await conn.sendMessage(from, { react: { text: '⬇️', key: msg.key } });
-
-            // 2. DOWNLOAD AUDIO using the videoUrl
-            let downloadUrl = `${baseUrl}/api/download/audio?url=${encodeURIComponent(videoUrl)}`;
-            let downloadRes = await axios.get(downloadUrl, { headers });
 
             const downloadData = downloadRes.data;
-            
+            console.log("API Response:", downloadData); // This will print in your bot terminal
+
             // Extract the direct MP3 link
-            let audioUrl = downloadData.url || downloadData.download_url || downloadData.result?.url || downloadData.audio;
+            let audioUrl = downloadData.url || downloadData.download_url || downloadData.result?.url || downloadData.audio || downloadData.link;
 
             if (!audioUrl) {
-                throw new Error("API did not return an audio download link.");
+                throw new Error(`API returned success but no audio link. Check console logs.`);
             }
 
             // 3. SEND AUDIO TO WHATSAPP
             await conn.sendMessage(from, {
                 audio: { url: audioUrl },
                 mimetype: 'audio/mp4',
-                fileName: `${title}.mp3`,
-                ptt: false // Set to true if you want it as a voice note
+                fileName: `${query}.mp3`,
+                ptt: false
             }, { quoted: msg });
 
             await conn.sendMessage(from, { react: { text: '✅', key: msg.key } });
 
         } catch (error) {
             console.error("Music API Error:", error.message);
+            
+            let errorMsg = error.message;
+            if (error.response && error.response.data) {
+                errorMsg = JSON.stringify(error.response.data);
+            }
+
             await conn.sendMessage(from, { react: { text: '❌', key: msg.key } });
             await conn.sendMessage(from, { 
-                text: `❌ Failed to download song.\nError: ${error.message}` 
+                text: `❌ Failed to download song.\nError: ${errorMsg}` 
             }, { quoted: msg });
         }
     }
