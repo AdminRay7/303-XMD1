@@ -29,20 +29,38 @@ global._logBuffer = [];
 const _MAX_LOG = 500;
 const _origConsoleLog = console.log.bind(console);
 console.log = (...args) => {
-    const line = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(" ");
-    global._logBuffer.push({ t: Date.now(), msg: line });
-    if (global._logBuffer.length > _MAX_LOG) global._logBuffer.shift();
+    try {
+        const line = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(" ");
+        global._logBuffer.push({ t: Date.now(), msg: line });
+        if (global._logBuffer.length > _MAX_LOG) global._logBuffer.shift();
+    } catch { /* ignore log serialization errors */ }
     _origConsoleLog(...args);
 };
 
+// ============================================
+//   FFmpeg wiring (optional, guarded)
+// ============================================
+try {
+    const ffmpegPath = require("ffmpeg-static");
+    const ffmpeg = require("fluent-ffmpeg");
+    if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
+    try {
+        const ffprobePath = require("ffprobe-static").path;
+        if (ffprobePath) ffmpeg.setFfprobePath(ffprobePath);
+    } catch {}
+    console.log("🎬 ffmpeg-static wired");
+} catch (e) {
+    // ffmpeg not installed — fine if the code doesn't actually call it
+}
 
+const crypto = require("crypto");
 const {
     default: makeWASocket,
     DisconnectReason,
     Browsers,
     makeCacheableSignalKeyStore,
-    fetchLatestBaileysVersion,
     fetchLatestWaWebVersion,
+    fetchLatestBaileysVersion,
     downloadContentFromMessage
 } = require("@whiskeysockets/baileys");
 const { MongoClient } = require("mongodb");
@@ -68,6 +86,36 @@ const payments = require("./lib/payments");
 const app = express();
 const PORT = process.env.PORT || config.port || 3000;
 
+// ============================================
+//   Security & performance middleware (optional, guarded)
+// ============================================
+try {
+    app.set("trust proxy", 1);
+    const helmet = require("helmet");
+    app.use(helmet({ contentSecurityPolicy: false }));
+    console.log("🛡️  helmet active");
+} catch {}
+
+try {
+    app.use(require("compression")());
+} catch {}
+
+try {
+    const rateLimit = require("express-rate-limit");
+    app.use("/api/auth/login",    rateLimit({ windowMs: 15 * 60 * 1000, max: 10 }));
+    app.use("/api/auth/register", rateLimit({ windowMs: 60 * 60 * 1000, max: 5 }));
+    app.use("/api/pair",          rateLimit({ windowMs: 60 * 1000,      max: 3 }));
+    console.log("🚦 rate-limit active");
+} catch {}
+
+// ============================================
+//   Stripe webhook — needs raw body BEFORE express.json()
+// ============================================
+app.post("/api/payments/webhook/stripe",
+    express.raw({ type: "application/json", limit: "5mb" }),
+    (req, res, next) => { req._stripeRaw = req.body; next(); }
+);
+
 app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
@@ -84,8 +132,12 @@ if (config.mongodb) {
 global.sessions = new Map();
 global.mongoClient = null;
 global.__debugCapture = null;
+global.__waVersionCache = null;
+global.__bootLocks = new Map();      // sessionId -> Promise (mutex)
+global.__pairCooldown = new Map();   // sessionId -> timestamp
 
 const MAX_SESSIONS = 12;
+
 let pairingQueue = Promise.resolve();
 function enqueuePairing(fn) {
     const next = pairingQueue.then(fn, fn);
@@ -94,12 +146,26 @@ function enqueuePairing(fn) {
 }
 
 // ---------------- HELPERS ----------------
+const VALID_JID_SUFFIXES = ["@s.whatsapp.net", "@g.us", "@lid", "@broadcast", "@newsletter"];
+
 function toJid(input) {
     if (!input || typeof input !== "string") return null;
-    if (input.includes("@")) return input;
+    input = input.trim();
+    if (input.includes("@")) {
+        const ok = VALID_JID_SUFFIXES.some(s => input.endsWith(s));
+        if (!ok) return null;
+        const bare = input.split("@")[0].split(":")[0];
+        const digits = bare.replace(/\D/g, "");
+        if (digits.length < 5 || digits.length > 20) return null;
+        return input;
+    }
     const digits = input.replace(/\D/g, "");
     if (digits.length < 10 || digits.length > 15) return null;
     return digits + "@s.whatsapp.net";
+}
+
+function escapeRegex(str) {
+    return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function firstActive() {
@@ -117,228 +183,218 @@ function isAdminAccount(account) {
     if (!account) return false;
     if (account.isAdmin === true) return true;
     const email = (account.email || "").toLowerCase();
-    return Array.isArray(config.adminEmails) && config.adminEmails.includes(email);
+    return Array.isArray(config.adminEmails) &&
+        config.adminEmails.map(e => e.toLowerCase()).includes(email);
 }
 
 async function checkIsAdmin(accountId, email) {
     const acc = await Account.findById(accountId).select("isAdmin email").lean();
     return acc?.isAdmin === true ||
-        (Array.isArray(config.adminEmails) && config.adminEmails.includes((email || acc?.email || "").toLowerCase()));
+        (Array.isArray(config.adminEmails) &&
+            config.adminEmails.map(e => e.toLowerCase())
+                .includes((email || acc?.email || "").toLowerCase()));
 }
 
 function summarizeContent(content) {
     if (!content) return "(empty)";
     if (typeof content === "string") return content;
-
+    if (content.text) return content.text;
+    if (content.caption) return content.caption;
     const parts = [];
-    if (content.text) parts.push(content.text);
-    if (content.caption) parts.push("[caption] " + content.caption);
     if (content.image) parts.push("[image]");
     if (content.video) parts.push("[video]");
     if (content.audio) parts.push("[audio]");
     if (content.sticker) parts.push("[sticker]");
     if (content.document) parts.push("[document]");
-    if (content.react) parts.push("[reaction: " + (content.react.text || "?") + "]");
+    if (content.react) parts.push("[reaction: " + (typeof content.react === 'string' ? content.react : content.react?.text || "?") + "]");
     if (content.contacts) parts.push("[contact card]");
-    if (content.poll) parts.push("[poll: " + (content.poll.name || "?") + "]");
+    if (content.poll) parts.push("[poll: " + (content.poll?.name || "?") + "]");
     if (content.interactiveButtons) parts.push("[interactive button message]");
     if (content.templateButtons) parts.push("[template button message]");
-
     return parts.length ? parts.join(" ") : JSON.stringify(content).slice(0, 200);
 }
 
+async function getCachedWaVersion() {
+    if (global.__waVersionCache) return global.__waVersionCache;
+    try {
+        if (typeof fetchLatestWaWebVersion === "function") {
+            const v = await fetchLatestWaWebVersion();
+            if (v?.version) { global.__waVersionCache = v; return v; }
+        }
+    } catch (e) {
+        console.error("fetchLatestWaWebVersion failed:", e.message);
+    }
+    try {
+        if (typeof fetchLatestBaileysVersion === "function") {
+            const v = await fetchLatestBaileysVersion();
+            if (v?.version) { global.__waVersionCache = v; return v; }
+        }
+    } catch (e) {
+        console.error("fetchLatestBaileysVersion failed:", e.message);
+    }
+    return { version: [2, 3000, 1023223821] }; // safe fallback
+}
+
 // ============================================================
-//   LIVE FEED — INCOMING MEDIA CAPTURE (v2)
+//   LIVE FEED — INCOMING MEDIA CAPTURE
 // ============================================================
 async function captureIncomingMedia(conn, msg, sessionId) {
-    const liveFeed = require("./lib/liveFeed");
-    const mediaCache = require("./lib/mediaCache");
+    try {
+        const liveFeed = require("./lib/liveFeed");
+        const mediaCache = require("./lib/mediaCache");
 
-    const from = msg.key.remoteJid;
-    const sender = msg.key.participant || msg.key.remoteJid;
-    const pushname = msg.pushName || sender.split("@")[0];
+        const from = msg.key.remoteJid;
+        const sender = msg.key.participant || msg.key.remoteJid;
+        const pushname = msg.pushName || sender.split("@")[0];
 
-    // Skip channels — they have their own handler
-    if (from.endsWith("@newsletter")) return;
+        if (from.endsWith("@newsletter")) return;
 
-    // ============================================================
-    //   UNWRAP nested message types (ephemeral, view-once, edited)
-    // ============================================================
-    let inner = msg.message || {};
-    let guard = 0;
-    while (guard++ < 5) {
-        if (inner.ephemeralMessage?.message) { inner = inner.ephemeralMessage.message; continue; }
-        if (inner.viewOnceMessage?.message)  { inner = inner.viewOnceMessage.message; continue; }
-        if (inner.viewOnceMessageV2?.message) { inner = inner.viewOnceMessageV2.message; continue; }
-        if (inner.viewOnceMessageV2Extension?.message) { inner = inner.viewOnceMessageV2Extension.message; continue; }
-        if (inner.editedMessage?.message)    { inner = inner.editedMessage.message; continue; }
-        if (inner.documentWithCaptionMessage?.message) { inner = inner.documentWithCaptionMessage.message; continue; }
-        break;
-    }
-
-    const type = Object.keys(inner)[0];
-    if (!type) return;
-
-    // DEBUG: capture raw structure
-    if (Array.isArray(global.__debugCapture) && global.__debugCapture.length < 5) {
-        try {
-            global.__debugCapture.push({
-                key: msg.key,
-                type,
-                inner: JSON.parse(JSON.stringify(inner, (k, v) => Buffer.isBuffer(v) ? `[Buffer:${v.length}]` : v)),
-                timestamp: new Date()
-            });
-        } catch (e) {
-            global.__debugCapture.push({ error: e.message, type });
+        let inner = msg.message || {};
+        let guard = 0;
+        while (guard++ < 5) {
+            if (inner.ephemeralMessage?.message) { inner = inner.ephemeralMessage.message; continue; }
+            if (inner.viewOnceMessage?.message)  { inner = inner.viewOnceMessage.message; continue; }
+            if (inner.viewOnceMessageV2?.message) { inner = inner.viewOnceMessageV2.message; continue; }
+            if (inner.viewOnceMessageV2Extension?.message) { inner = inner.viewOnceMessageV2Extension.message; continue; }
+            if (inner.editedMessage?.message)    { inner = inner.editedMessage.message; continue; }
+            if (inner.documentWithCaptionMessage?.message) { inner = inner.documentWithCaptionMessage.message; continue; }
+            break;
         }
-    }
 
-    // ============================================================
-    //   SKIP protocol messages (status deletes, reads, etc)
-    // ============================================================
-    const SKIP_TYPES = [
-        "protocolMessage",
-        "senderKeyDistributionMessage",
-        "messageContextInfo",
-        "deviceSentMessage",
-        "reactionMessage"
-    ];
-    if (SKIP_TYPES.includes(type)) return;
+        const SKIP_TYPES = [
+            "protocolMessage", "senderKeyDistributionMessage",
+            "messageContextInfo", "deviceSentMessage", "reactionMessage"
+        ];
 
-    // ============================================================
-    //   EXTRACT text
-    // ============================================================
-    let text = "";
-    if (type === "conversation") text = inner.conversation || "";
-    else if (type === "extendedTextMessage") text = inner.extendedTextMessage?.text || "";
-    else if (type === "imageMessage") text = inner.imageMessage?.caption || "";
-    else if (type === "videoMessage") text = inner.videoMessage?.caption || "";
-    else if (type === "documentMessage") text = inner.documentMessage?.caption || "";
-    else if (type === "ptvMessage") text = inner.ptvMessage?.caption || "";
-
-    // ============================================================
-    //   DETECT + save media
-    // ============================================================
-    let mediaType = null;
-    let mediaPath = null;
-    let mediaSize = null;
-    let fileName = null;
-
-    const map = {
-        imageMessage:    { kind: "image",    ext: "jpg",  mime: "image/jpeg" },
-        videoMessage:    { kind: "video",    ext: "mp4",  mime: "video/mp4" },
-        ptvMessage:      { kind: "video",    ext: "mp4",  mime: "video/mp4" },
-        audioMessage:    { kind: "audio",    ext: "mp3",  mime: "audio/mpeg" },
-        stickerMessage:  { kind: "sticker",  ext: "webp", mime: "image/webp" },
-        documentMessage: { kind: "document", ext: "bin",  mime: "application/octet-stream" }
-    };
-
-    if (map[type]) {
-        const info = map[type];
-        mediaType = info.kind;
-
-        try {
-            const stream = await downloadContentFromMessage(inner[type], info.kind);
-            const chunks = [];
-            let total = 0;
-            const MAX = 16 * 1024 * 1024;
-            for await (const c of stream) {
-                total += c.length;
-                if (total > MAX) throw new Error("Media > 16MB");
-                chunks.push(c);
-            }
-            const buffer = Buffer.concat(chunks);
-            mediaSize = buffer.length;
-
-            if (info.kind === "document") {
-                fileName = inner.documentMessage?.fileName || "file";
-            }
-
-            mediaPath = mediaCache.saveMedia(sessionId, buffer, info.ext, info.mime);
-
-            if (!mediaPath) {
-                console.error(`[capture] saveMedia returned null for ${info.kind}`);
-            } else {
-                console.log(`[capture] saved ${info.kind}: ${mediaPath} (${buffer.length} bytes)`);
-            }
-        } catch (e) {
-            console.error(`[capture] download ${info.kind} failed:`, e.message);
+        let type = null;
+        for (const k of Object.keys(inner)) {
+            if (SKIP_TYPES.includes(k)) continue;
+            type = k;
+            break;
         }
-    }
+        if (!type) return;
 
-    // ============================================================
-    //   Bot info + Chat name
-    // ============================================================
-    const botJid = conn.user?.id || "";
-    const botPhone = botJid.split(":")[0]?.split("@")[0]?.replace(/\D/g, "") || null;
-
-    const isGroup = from.endsWith("@g.us");
-    const isStatus = from === "status@broadcast";
-
-    let chatName = pushname || sender.split("@")[0];
-    if (isGroup) {
-        try {
-            const meta = await conn.groupMetadata(from);
-            chatName = meta.subject || chatName;
-        } catch {}
-    }
-
-    // Status handling
-    let eventType = "message";
-    let recipientName = config.botName || "Bot";
-    let recipientJid = botJid || null;
-    let recipientPhone = botPhone || null;
-
-    if (isStatus) {
-        eventType = "status";
-        recipientName = "Status";
-        recipientJid = "status@broadcast";
-        recipientPhone = null;
-    }
-
-    // Skip truly-empty events (no text, no media)
-    if (!text && !mediaType && !["conversation","extendedTextMessage"].includes(type)) {
-        return;
-    }
-
-    await liveFeed.push({
-        sessionId,
-        type: eventType,
-        chatJid: from,
-        chatName,
-        isGroup,
-        senderJid: sender,
-        senderName: pushname,
-        senderPhone: sender.split("@")[0].replace(/\D/g, ""),
-        recipientJid,
-        recipientName,
-        recipientPhone,
-        fromMe: false,
-        text: text || (mediaType ? `[${mediaType}]` : `[${type}]`),
-        mediaType,
-        mediaPath,
-        mediaSize,
-        fileName,
-        extra: {
-            direction: isStatus ? "status" : "incoming",
-            messageId: msg.key.id,
-            rawType: type
+        if (Array.isArray(global.__debugCapture) && global.__debugCapture.length < 5) {
+            try {
+                global.__debugCapture.push({
+                    key: msg.key, type,
+                    inner: JSON.parse(JSON.stringify(inner, (k, v) => Buffer.isBuffer(v) ? `[Buffer:${v.length}]` : v)),
+                    timestamp: new Date()
+                });
+            } catch (e) {
+                global.__debugCapture.push({ error: e.message, type });
+            }
         }
-    });
+
+        let text = "";
+        if (type === "conversation") text = inner.conversation || "";
+        else if (type === "extendedTextMessage") text = inner.extendedTextMessage?.text || "";
+        else if (type === "imageMessage") text = inner.imageMessage?.caption || "";
+        else if (type === "videoMessage") text = inner.videoMessage?.caption || "";
+        else if (type === "documentMessage") text = inner.documentMessage?.caption || "";
+        else if (type === "ptvMessage") text = inner.ptvMessage?.caption || "";
+
+        let mediaType = null, mediaPath = null, mediaSize = null, fileName = null;
+
+        const map = {
+            imageMessage:    { kind: "image",    ext: "jpg",  mime: "image/jpeg" },
+            videoMessage:    { kind: "video",    ext: "mp4",  mime: "video/mp4" },
+            ptvMessage:      { kind: "video",    ext: "mp4",  mime: "video/mp4" },
+            audioMessage:    { kind: "audio",    ext: "mp3",  mime: "audio/mpeg" },
+            stickerMessage:  { kind: "sticker",  ext: "webp", mime: "image/webp" },
+            documentMessage: { kind: "document", ext: "bin",  mime: "application/octet-stream" }
+        };
+
+        if (map[type]) {
+            const info = map[type];
+            mediaType = info.kind;
+            try {
+                const stream = await downloadContentFromMessage(inner[type], info.kind);
+                const chunks = [];
+                let total = 0;
+                const MAX = 16 * 1024 * 1024;
+                for await (const c of stream) {
+                    total += c.length;
+                    if (total > MAX) throw new Error("Media > 16MB");
+                    chunks.push(c);
+                }
+                const buffer = Buffer.concat(chunks);
+                mediaSize = buffer.length;
+
+                if (info.kind === "document") {
+                    fileName = inner.documentMessage?.fileName || "file";
+                }
+                mediaPath = mediaCache.saveMedia(sessionId, buffer, info.ext, info.mime);
+                if (!mediaPath) console.error(`[capture] saveMedia returned null for ${info.kind}`);
+            } catch (e) {
+                console.error(`[capture] download ${info.kind} failed:`, e.message);
+            }
+        }
+
+        const botJid = conn.user?.id || "";
+        const botPhone = botJid.split(":")[0]?.split("@")[0]?.replace(/\D/g, "") || null;
+
+        const isGroup = from.endsWith("@g.us");
+        const isStatus = from === "status@broadcast";
+
+        let chatName = pushname || sender.split("@")[0];
+        if (isGroup) {
+            try { chatName = (await conn.groupMetadata(from)).subject || chatName; } catch {}
+        }
+
+        let eventType = "message";
+        let recipientName = config.botName || "Bot";
+        let recipientJid = botJid || null;
+        let recipientPhone = botPhone || null;
+
+        if (isStatus) {
+            eventType = "status";
+            recipientName = "Status";
+            recipientJid = "status@broadcast";
+            recipientPhone = null;
+        }
+
+        if (!text && !mediaType && !["conversation", "extendedTextMessage"].includes(type)) {
+            return;
+        }
+
+        await liveFeed.push({
+            sessionId, type: eventType,
+            chatJid: from, chatName, isGroup,
+            senderJid: sender, senderName: pushname,
+            senderPhone: sender.split("@")[0].replace(/\D/g, ""),
+            recipientJid, recipientName, recipientPhone,
+            fromMe: false,
+            text: text || (mediaType ? `[${mediaType}]` : `[${type}]`),
+            mediaType, mediaPath, mediaSize, fileName,
+            extra: { direction: isStatus ? "status" : "incoming", messageId: msg.key.id, rawType: type }
+        });
+    } catch (e) {
+        console.error("captureIncomingMedia fatal:", e.message);
+    }
 }
 
 // ---------------- API AUTH (legacy) ----------------
 const API_KEY = process.env.API_KEY || config.apiKey;
 function requireApiKey(req, res, next) {
     const key = req.headers["x-api-key"] || req.query.apiKey;
-    if (!key || key !== API_KEY) return res.status(401).json({ error: "Unauthorized" });
+    if (!key || !API_KEY) return res.status(401).json({ error: "Unauthorized" });
+    const a = Buffer.from(String(key));
+    const b = Buffer.from(String(API_KEY));
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        return res.status(401).json({ error: "Unauthorized" });
+    }
     next();
 }
 
 // ---------------- LIVE MEDIA SERVER ----------------
 app.get("/live-media/:sessionId/:file", (req, res) => {
     const { sessionId, file } = req.params;
-
+    if (sessionId.includes("..") || file.includes("..") ||
+        sessionId.includes("/") || file.includes("/") ||
+        sessionId.includes("\\") || file.includes("\\")) {
+        return res.status(400).send("Bad path");
+    }
     try {
         const mediaCache = require("./lib/mediaCache");
         const mem = mediaCache.getFromMemory(`${sessionId}/${file}`);
@@ -350,11 +406,8 @@ app.get("/live-media/:sessionId/:file", (req, res) => {
     } catch (e) {
         console.error("live-media mem:", e.message);
     }
-
     const fp = path.join(__dirname, "public", "live-media", sessionId, file);
-    if (!fs.existsSync(fp)) {
-        return res.status(404).send("Media not found or expired");
-    }
+    if (!fs.existsSync(fp)) return res.status(404).send("Media not found or expired");
     res.sendFile(fp);
 });
 
@@ -366,8 +419,8 @@ app.get("/register",        (req, res) => servePage(res, "register.html"));
 app.get("/login",           (req, res) => servePage(res, "login.html"));
 app.get("/dashboard",       (req, res) => servePage(res, "dashboard.html"));
 app.get("/store",           (req, res) => servePage(res, "store.html"));
-app.get("/admin-appstore", (req, res) => servePage(res, "admin-appstore.html"));
-app.get("/appstore",        (req, res) => servePage(res, "appstore.html")); // <-- ADDED
+app.get("/admin-appstore",  (req, res) => servePage(res, "admin-appstore.html"));
+app.get("/appstore",        (req, res) => servePage(res, "appstore.html"));
 app.get("/profile",         (req, res) => servePage(res, "profile.html"));
 app.get("/settings",        (req, res) => servePage(res, "settings.html"));
 app.get("/live",            (req, res) => servePage(res, "live.html"));
@@ -390,7 +443,7 @@ app.get("/api-docs.html",   (req, res) => servePage(res, "api-docs.html"));
 app.get("/pair",            (req, res) => servePage(res, "pair.html"));
 app.get("/mobile",          (req, res) => servePage(res, "app.html"));
 app.get("/app",             (req, res) => servePage(res, "app.html"));
-app.get("/manifest.json",   (req, res) => {
+app.get("/manifest.json", (req, res) => {
     const p = path.join(__dirname, "public", "manifest.json");
     if (!fs.existsSync(p)) return res.status(404).send("manifest.json missing");
     res.type("application/json").sendFile(p);
@@ -401,25 +454,7 @@ app.get("/service-worker.js", (req, res) => {
     res.type("application/javascript").sendFile(p);
 });
 app.get('/download-apk', (req, res) => {
-    // This forces the browser to follow the link and download the file immediately
     res.redirect('https://github.com/AdminRay7/303-XMD1/releases/download/v1.0.0/303-XMD.apk');
-});
-
-// Delete an app (Admin Only)
-app.delete('/api/admin/store/apps/:id', async (req, res) => {
-    try {
-        // Removed the require line here because StoreApp is already imported at the top of index.js
-        const deletedApp = await StoreApp.findByIdAndDelete(req.params.id);
-        
-        if (!deletedApp) {
-            return res.status(404).json({ success: false, error: 'App not found' });
-        }
-        
-        res.json({ success: true, message: 'App deleted successfully' });
-    } catch (err) {
-        console.error("Delete Error:", err);
-        res.status(500).json({ success: false, error: err.message });
-    }
 });
 
 // ============================================
@@ -427,7 +462,7 @@ app.delete('/api/admin/store/apps/:id', async (req, res) => {
 // ============================================
 app.post("/api/auth/register", async (req, res) => {
     try {
-        const { email, password, name } = req.body;
+        const { email, password, name } = req.body || {};
         if (!email || !password) return res.status(400).json({ error: "Email and password required" });
         if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: "Invalid email format" });
@@ -436,10 +471,11 @@ app.post("/api/auth/register", async (req, res) => {
         const existing = await Account.findOne({ email: cleanEmail });
         if (existing) return res.status(409).json({ error: "Email already registered" });
 
-        const isAdmin = config.adminEmails.includes(cleanEmail);
+        const adminEmails = Array.isArray(config.adminEmails) ? config.adminEmails.map(e => e.toLowerCase()) : [];
+        const isAdmin = adminEmails.includes(cleanEmail);
+
         const hashed = await auth.hashPassword(password);
         const account = await Account.create({ email: cleanEmail, password: hashed, name: name || "", isAdmin });
-
         const token = auth.signToken({ id: account._id.toString(), email: account.email });
 
         res.json({
@@ -458,7 +494,7 @@ app.post("/api/auth/register", async (req, res) => {
 
 app.post("/api/auth/login", async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { email, password } = req.body || {};
         if (!email || !password) return res.status(400).json({ error: "Email and password required" });
 
         const account = await Account.findOne({ email: email.toLowerCase().trim() });
@@ -472,7 +508,6 @@ app.post("/api/auth/login", async (req, res) => {
         await account.save();
 
         const token = auth.signToken({ id: account._id.toString(), email: account.email });
-
         res.json({
             success: true, token,
             user: {
@@ -511,8 +546,10 @@ app.get("/api/user/profile", auth.requireAuth, async (req, res) => {
         const account = await Account.findById(req.account.id).select("-password").lean();
         if (!account) return res.status(404).json({ error: "Account not found" });
 
-        const sessionsCount = await SessionSettings.countDocuments({ ownerAccountId: req.account.id });
-        const messagesCount = await MessageLog.countDocuments({ accountId: req.account.id });
+        const [sessionsCount, messagesCount] = await Promise.all([
+            SessionSettings.countDocuments({ ownerAccountId: req.account.id }),
+            MessageLog.countDocuments({ accountId: req.account.id })
+        ]);
 
         res.json({
             success: true,
@@ -529,7 +566,7 @@ app.get("/api/user/profile", auth.requireAuth, async (req, res) => {
 
 app.post("/api/user/profile", auth.requireAuth, async (req, res) => {
     try {
-        const { name } = req.body;
+        const { name } = req.body || {};
         const update = {};
         if (typeof name === "string" && name.trim()) update.name = name.trim().slice(0, 60);
         if (!Object.keys(update).length) return res.status(400).json({ error: "Nothing to update" });
@@ -540,9 +577,10 @@ app.post("/api/user/profile", auth.requireAuth, async (req, res) => {
 
 app.post("/api/user/password", auth.requireAuth, async (req, res) => {
     try {
-        const { oldPassword, newPassword } = req.body;
+        const { oldPassword, newPassword } = req.body || {};
         if (!oldPassword || !newPassword) return res.status(400).json({ error: "oldPassword and newPassword required" });
         if (newPassword.length < 6) return res.status(400).json({ error: "New password must be at least 6 characters" });
+        if (oldPassword === newPassword) return res.status(400).json({ error: "New password must differ" });
 
         const account = await Account.findById(req.account.id);
         if (!account) return res.status(404).json({ error: "Not found" });
@@ -563,30 +601,28 @@ app.get("/api/user/sessions", auth.requireAuth, async (req, res) => {
     try {
         const accountId = req.account.id;
         const isAdmin = await checkIsAdmin(accountId, req.account.email);
-        let filter = {};
-        if (!isAdmin) filter.ownerAccountId = accountId;
+        const filter = isAdmin ? {} : { ownerAccountId: accountId };
 
         const sessions = await SessionSettings.find(filter).lean();
-        const list = [];
-
-        for (const s of sessions) {
+        const list = await Promise.all(sessions.map(async s => {
             const msgCount = await MessageLog.countDocuments({ sessionId: s.sessionId });
-            const live = global.sessions.get(s.sessionId);
             let phone = s.phoneNumber || null;
             if (!phone) {
                 const last = await MessageLog.findOne({ sessionId: s.sessionId }).sort({ timestamp: -1 }).lean();
                 if (last?.chatJid && !last.chatJid.includes("@g.us")) phone = last.chatJid.split("@")[0];
             }
-            list.push({
+            const live = global.sessions.get(s.sessionId);
+            return {
                 sessionId: s.sessionId,
                 phone: phone || "pending",
                 connected: !!live?.conn?.user,
                 ready: !!live?.socketReady,
+                paused: live?._paused === true,
                 jid: live?.conn?.user?.id || null,
                 messageCount: msgCount,
                 createdAt: s.updatedAt || null
-            });
-        }
+            };
+        }));
         res.json({ success: true, sessions: list, isAdmin });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -595,8 +631,7 @@ app.get("/api/user/sessions/health", auth.requireAuth, async (req, res) => {
     try {
         const accountId = req.account.id;
         const isAdmin = await checkIsAdmin(accountId, req.account.email);
-        let filter = {};
-        if (!isAdmin) filter.ownerAccountId = accountId;
+        const filter = isAdmin ? {} : { ownerAccountId: accountId };
 
         const userSessions = await SessionSettings.find(filter).lean();
         let online = 0, offline = 0, connecting = 0;
@@ -608,7 +643,10 @@ app.get("/api/user/sessions/health", auth.requireAuth, async (req, res) => {
             const ready = !!live?.socketReady;
             if (connected) online++;
             else if (ready) connecting++;
-            else { offline++; offlineList.push({ sessionId: s.sessionId, phone: s.phoneNumber || "pending" }); }
+            else {
+                offline++;
+                offlineList.push({ sessionId: s.sessionId, phone: s.phoneNumber || "pending" });
+            }
         }
         res.json({ success: true, total: userSessions.length, online, connecting, offline, offlineSessions: offlineList });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -618,8 +656,7 @@ app.post("/api/user/sessions/reconnect-all", auth.requireAuth, async (req, res) 
     try {
         const accountId = req.account.id;
         const isAdmin = await checkIsAdmin(accountId, req.account.email);
-        let filter = {};
-        if (!isAdmin) filter.ownerAccountId = accountId;
+        const filter = isAdmin ? {} : { ownerAccountId: accountId };
 
         const userSessions = await SessionSettings.find(filter).lean();
         let reconnected = 0;
@@ -634,7 +671,7 @@ app.post("/api/user/sessions/reconnect-all", auth.requireAuth, async (req, res) 
             global.sessions.set(s.sessionId, session);
             try { await bootSocket(s.sessionId, session); reconnected++; }
             catch (e) { console.error(`reconnect-all ${s.sessionId}:`, e.message); }
-            await new Promise(r => setTimeout(r, 1500));
+            await new Promise(r => setTimeout(r, 1000));
         }
         res.json({ success: true, reconnected });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -651,15 +688,19 @@ app.post("/api/user/sessions/:sessionId/reconnect", auth.requireAuth, async (req
         }
         const existing = global.sessions.get(sessionId);
         if (existing?.conn?.user) return res.json({ success: true, message: "Already connected" });
-
+        if (existing?._paused && !isAdmin) {
+            return res.status(403).json({ error: "Session is paused by admin" });
+        }
         const session = existing || {
             conn: null, socketReady: false, pairing: null, pairingNumber: null,
             startedAt: Date.now(), welcomed: false
         };
         session._paused = false;
         global.sessions.set(sessionId, session);
-        try { await bootSocket(sessionId, session); res.json({ success: true, message: "Reconnecting…" }); }
-        catch (e) { res.status(500).json({ error: e.message }); }
+        try {
+            await bootSocket(sessionId, session);
+            res.json({ success: true, message: "Reconnecting…" });
+        } catch (e) { res.status(500).json({ error: e.message }); }
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -675,6 +716,7 @@ app.delete("/api/user/sessions/:sessionId", auth.requireAuth, async (req, res) =
         await logoutSession(sessionId);
         await SessionSettings.deleteOne({ sessionId });
         await MessageLog.deleteMany({ sessionId });
+        await LiveEvent.deleteMany({ sessionId });
         res.json({ success: true, message: "Session removed" });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -693,8 +735,7 @@ app.get("/api/settings", auth.requireAuth, async (req, res) => {
     try {
         const accountId = req.account.id;
         const isAdmin = await checkIsAdmin(accountId, req.account.email);
-        let filter = {};
-        if (!isAdmin) filter.ownerAccountId = accountId;
+        const filter = isAdmin ? {} : { ownerAccountId: accountId };
 
         const sessions = await SessionSettings.find(filter).lean();
         const list = sessions.map(s => {
@@ -765,7 +806,20 @@ app.post("/api/settings/:sessionId", auth.requireAuth, async (req, res) => {
         }
         if (!Object.keys(clean).length) return res.status(400).json({ error: "No valid settings to update" });
         clean.updatedAt = new Date();
-        await SessionSettings.updateOne({ sessionId }, { $set: clean }, { upsert: true });
+
+        const existing = await SessionSettings.findOne({ sessionId }).select("ownerAccountId").lean();
+        const $set = { ...clean };
+        const $setOnInsert = {};
+        if (!existing) {
+            $setOnInsert.sessionId = sessionId;
+            if (accountId) $setOnInsert.ownerAccountId = accountId;
+        }
+
+        await SessionSettings.updateOne(
+            { sessionId },
+            { $set, ...(Object.keys($setOnInsert).length ? { $setOnInsert } : {}) },
+            { upsert: true }
+        );
         res.json({ success: true, applied: clean });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -780,17 +834,23 @@ app.post("/api/settings/:sessionId/reset", auth.requireAuth, async (req, res) =>
             if (!own) return res.status(403).json({ error: "You don't own this session" });
         }
         const unset = {};
-        for (const key of OVERRIDABLE_KEYS) unset[key] = '';
+        for (const key of OVERRIDABLE_KEYS) unset[key] = 1;
         await SessionSettings.updateOne({ sessionId }, { $unset: unset });
         res.json({ success: true, message: "Settings reset to defaults" });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ============================================
-//   LIVE MONITOR
+//   LIVE MONITOR (SSE)
 // ============================================
+const _sseConnections = new Set();
+const _SSE_MAX = 100;
+
 app.get("/api/live/stream", adminAuth.requireAdmin, async (req, res) => {
     try {
+        if (_sseConnections.size >= _SSE_MAX) {
+            return res.status(429).json({ error: "Too many live streams" });
+        }
         res.set({
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',
@@ -799,19 +859,19 @@ app.get("/api/live/stream", adminAuth.requireAdmin, async (req, res) => {
         });
         res.flushHeaders();
 
-        const heartbeat = setInterval(() => {
-            try { res.write(': ping\n\n'); } catch {}
-        }, 25000);
-
+        const heartbeat = setInterval(() => { try { res.write(': ping\n\n'); } catch {} }, 25000);
         const liveFeed = require("./lib/liveFeed");
-        const listener = (event) => {
-            try { res.write(`data: ${JSON.stringify(event)}\n\n`); } catch {}
-        };
+        const listener = (event) => { try { res.write(`data: ${JSON.stringify(event)}\n\n`); } catch {} };
+
         liveFeed.on('event', listener);
+        _sseConnections.add({ res, listener });
 
         req.on('close', () => {
             clearInterval(heartbeat);
             liveFeed.off('event', listener);
+            for (const c of _sseConnections) {
+                if (c.res === res) { _sseConnections.delete(c); break; }
+            }
         });
     } catch (e) {
         console.error('SSE error:', e.message);
@@ -822,7 +882,8 @@ app.get("/api/live/stream", adminAuth.requireAdmin, async (req, res) => {
 app.get("/api/live/recent", adminAuth.requireAdmin, async (req, res) => {
     try {
         const liveFeed = require("./lib/liveFeed");
-        const limit = Math.min(parseInt(req.query.limit) || 200, 500);
+        const raw = parseInt(req.query.limit, 10);
+        const limit = Math.min(Number.isFinite(raw) && raw > 0 ? raw : 200, 500);
         const sessionId = req.query.sessionId || null;
         const events = await liveFeed.getRecent(limit, sessionId);
         res.json({ success: true, events });
@@ -853,29 +914,16 @@ app.get("/api/admin/debug/last-message", adminAuth.requireAdmin, async (req, res
     try {
         const recent = await LiveEvent.find({}).sort({ timestamp: -1 }).limit(20).lean();
         res.json({
-            success: true,
-            count: recent.length,
+            success: true, count: recent.length,
             events: recent.map(e => ({
-                _id: e._id,
-                sessionId: e.sessionId,
-                type: e.type,
-                text: e.text,
-                mediaType: e.mediaType,
-                mediaPath: e.mediaPath,
-                mediaSize: e.mediaSize,
-                fileName: e.fileName,
-                senderName: e.senderName,
-                senderPhone: e.senderPhone,
-                chatJid: e.chatJid,
-                isGroup: e.isGroup,
-                fromMe: e.fromMe,
-                extra: e.extra,
-                timestamp: e.timestamp
+                _id: e._id, sessionId: e.sessionId, type: e.type, text: e.text,
+                mediaType: e.mediaType, mediaPath: e.mediaPath, mediaSize: e.mediaSize,
+                fileName: e.fileName, senderName: e.senderName, senderPhone: e.senderPhone,
+                chatJid: e.chatJid, isGroup: e.isGroup, fromMe: e.fromMe,
+                extra: e.extra, timestamp: e.timestamp
             }))
         });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post("/api/admin/debug/capture-next", adminAuth.requireAdmin, (req, res) => {
@@ -914,9 +962,9 @@ app.get("/api/admin/overview", adminAuth.requireAdmin, async (req, res) => {
 app.get("/api/admin/accounts", adminAuth.requireAdmin, async (req, res) => {
     try {
         const q = (req.query.q || "").toString().trim();
-        const limit = Math.min(parseInt(req.query.limit) || 100, 500);
-        let filter = {};
-        if (q) filter.email = { $regex: q, $options: "i" };
+        const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
+        const filter = {};
+        if (q) filter.email = { $regex: escapeRegex(q), $options: "i" };
         const accounts = await Account.find(filter).sort({ createdAt: -1 }).limit(limit).select("-password");
         res.json({ accounts, total: accounts.length });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -932,20 +980,20 @@ app.get("/api/admin/accounts/:id", adminAuth.requireAdmin, async (req, res) => {
 
 app.post("/api/admin/accounts/:id", adminAuth.requireAdmin, async (req, res) => {
     try {
-        const { credits, isBanned, maxSessions, isAdmin } = req.body;
+        const { credits, isBanned, maxSessions, isAdmin } = req.body || {};
         const update = {};
-        if (typeof credits === "number") update.credits = credits;
+        if (typeof credits === "number" && credits >= 0) update.credits = Math.floor(credits);
         if (typeof isBanned === "boolean") update.isBanned = isBanned;
-        if (typeof maxSessions === "number") update.maxSessions = maxSessions;
+        if (typeof maxSessions === "number" && maxSessions >= 0) update.maxSessions = Math.floor(maxSessions);
         if (typeof isAdmin === "boolean") update.isAdmin = isAdmin;
+        if (!Object.keys(update).length) return res.status(400).json({ error: "Nothing to update" });
+
         const account = await Account.findByIdAndUpdate(req.params.id, update, { new: true }).select("-password");
         if (!account) return res.status(404).json({ error: "Not found" });
 
         try {
             await auditLog.log(req, isBanned ? "ban_account" : "update_account", {
-                target: account.email,
-                targetType: "account",
-                details: update
+                target: account.email, targetType: "account", details: update
             });
         } catch {}
 
@@ -957,14 +1005,9 @@ app.delete("/api/admin/accounts/:id", adminAuth.requireAdmin, async (req, res) =
     try {
         const account = await Account.findByIdAndDelete(req.params.id);
         if (!account) return res.status(404).json({ error: "Not found" });
-
         try {
-            await auditLog.log(req, "delete_account", {
-                target: account.email,
-                targetType: "account"
-            });
+            await auditLog.log(req, "delete_account", { target: account.email, targetType: "account" });
         } catch {}
-
         res.json({ success: true, deleted: account.email });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -977,6 +1020,7 @@ app.get("/api/admin/sessions", adminAuth.requireAdmin, async (req, res) => {
                 sessionId: id,
                 connected: !!s.conn?.user,
                 ready: s.socketReady,
+                paused: s._paused === true,
                 jid: s.conn?.user?.id || null,
                 phone: s.conn?.user?.id ? s.conn.user.id.split(":")[0] : null,
                 pairing: s.pairing || null,
@@ -990,63 +1034,59 @@ app.get("/api/admin/sessions", adminAuth.requireAdmin, async (req, res) => {
 app.delete("/api/admin/sessions/:sessionId", adminAuth.requireAdmin, async (req, res) => {
     try {
         await logoutSession(req.params.sessionId);
-
         try {
-            await auditLog.log(req, "kill_session", {
-                target: req.params.sessionId,
-                targetType: "session"
-            });
+            await auditLog.log(req, "kill_session", { target: req.params.sessionId, targetType: "session" });
         } catch {}
-
         res.json({ success: true, message: `Session ${req.params.sessionId} killed.` });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post("/api/admin/broadcast", adminAuth.requireAdmin, async (req, res) => {
     try {
-        const { text } = req.body;
+        const { text } = req.body || {};
         if (!text || text.trim().length === 0) return res.status(400).json({ error: "text required" });
+        const trimmed = String(text).trim().slice(0, 4000);
         let sent = 0, failed = 0;
-        for (const [sessionId, s] of global.sessions) {
+        for (const [, s] of global.sessions) {
             if (!s.conn?.user) continue;
             try {
-                await s.conn.sendMessage(s.conn.user.id, { text });
+                await s.conn.sendMessage(s.conn.user.id, { text: trimmed });
                 sent++;
-                await new Promise(r => setTimeout(r, 800));
+                await new Promise(r => setTimeout(r, 1500));
             } catch { failed++; }
         }
-
         try {
             await auditLog.log(req, "broadcast", {
                 targetType: "system",
-                details: { sent, failed, preview: text.slice(0, 100) }
+                details: { sent, failed, preview: trimmed.slice(0, 100) }
             });
         } catch {}
-
         res.json({ success: true, sent, failed });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ============================================
-//   ADMIN — SESSION CONTROL (on/off toggle)
+//   ADMIN — SESSION CONTROL
 // ============================================
 app.get("/api/admin/sessions/status", adminAuth.requireAdmin, async (req, res) => {
     try {
         const all = await SessionSettings.find({}).lean();
+        const ownerIds = [...new Set(all.map(s => s.ownerAccountId).filter(Boolean))];
+        const owners = ownerIds.length
+            ? await Account.find({ _id: { $in: ownerIds } }).select("email").lean()
+            : [];
+        const emailById = new Map(owners.map(o => [String(o._id), o.email]));
 
         const list = all.map(s => {
             const live = global.sessions.get(s.sessionId);
-            const running = !!live;
-            const connected = !!live?.conn?.user;
-            const manuallyOff = live?._paused === true;
-
             return {
                 sessionId: s.sessionId,
                 phone: s.phoneNumber || "pending",
                 ownerAccountId: s.ownerAccountId || null,
-                running,
-                connected,
-                paused: manuallyOff,
+                ownerEmail: s.ownerAccountId ? emailById.get(String(s.ownerAccountId)) || null : null,
+                running: !!live,
+                connected: !!live?.conn?.user,
+                paused: live?._paused === true,
                 jid: live?.conn?.user?.id || null,
                 startedAt: live?.startedAt || null
             };
@@ -1058,6 +1098,7 @@ app.get("/api/admin/sessions/status", adminAuth.requireAdmin, async (req, res) =
                     sessionId: id,
                     phone: live?.conn?.user?.id?.split(":")[0] || "unknown",
                     ownerAccountId: null,
+                    ownerEmail: null,
                     running: true,
                     connected: !!live?.conn?.user,
                     paused: live?._paused === true,
@@ -1066,16 +1107,6 @@ app.get("/api/admin/sessions/status", adminAuth.requireAdmin, async (req, res) =
                 });
             }
         }
-
-        for (const s of list) {
-            if (s.ownerAccountId) {
-                try {
-                    const acc = await Account.findById(s.ownerAccountId).select("email").lean();
-                    s.ownerEmail = acc?.email || null;
-                } catch {}
-            }
-        }
-
         res.json({ success: true, sessions: list, total: list.length });
     } catch (e) {
         console.error("sessions/status:", e.message);
@@ -1087,25 +1118,14 @@ app.post("/api/admin/sessions/pause/:sessionId", adminAuth.requireAdmin, async (
     try {
         const sessionId = req.params.sessionId;
         const live = global.sessions.get(sessionId);
-        if (!live) {
-            return res.status(404).json({ error: "Session not running" });
-        }
+        if (!live) return res.status(404).json({ error: "Session not running" });
 
         live._paused = true;
-
-        try {
-            live.conn?.ev?.removeAllListeners();
-            live.conn?.ws?.close();
-        } catch (e) { console.error("pause socket close:", e.message); }
-
+        try { live.conn?.ws?.close(); } catch (e) { console.error("pause socket close:", e.message); }
         live.conn = null;
         live.socketReady = false;
 
-        await auditLog.log(req, "session_pause", {
-            target: sessionId,
-            targetType: "session"
-        }).catch(() => {});
-
+        await auditLog.log(req, "session_pause", { target: sessionId, targetType: "session" }).catch(() => {});
         res.json({ success: true, message: "Session paused", sessionId });
     } catch (e) {
         console.error("sessions/pause:", e.message);
@@ -1116,40 +1136,23 @@ app.post("/api/admin/sessions/pause/:sessionId", adminAuth.requireAdmin, async (
 app.post("/api/admin/sessions/resume/:sessionId", adminAuth.requireAdmin, async (req, res) => {
     try {
         const sessionId = req.params.sessionId;
-
         let live = global.sessions.get(sessionId);
-
         if (!live) {
             live = {
-                conn: null,
-                socketReady: false,
-                pairing: null,
-                pairingNumber: null,
-                startedAt: Date.now(),
-                welcomed: true,
-                _paused: false
+                conn: null, socketReady: false, pairing: null, pairingNumber: null,
+                startedAt: Date.now(), welcomed: true, _paused: false
             };
             global.sessions.set(sessionId, live);
         }
-
         live._paused = false;
+        if (live.conn?.user) return res.json({ success: true, message: "Already running", sessionId });
 
-        if (live.conn?.user) {
-            return res.json({ success: true, message: "Already running", sessionId });
-        }
-
-        try {
-            await bootSocket(sessionId, live);
-        } catch (e) {
+        try { await bootSocket(sessionId, live); }
+        catch (e) {
             console.error("sessions/resume boot:", e.message);
             return res.status(500).json({ error: "Failed to boot socket: " + e.message });
         }
-
-        await auditLog.log(req, "session_resume", {
-            target: sessionId,
-            targetType: "session"
-        }).catch(() => {});
-
+        await auditLog.log(req, "session_resume", { target: sessionId, targetType: "session" }).catch(() => {});
         res.json({ success: true, message: "Session resumed", sessionId });
     } catch (e) {
         console.error("sessions/resume:", e.message);
@@ -1190,15 +1193,12 @@ app.post("/api/admin/takeover/send", adminAuth.requireAdmin, async (req, res) =>
         if (!jid) return res.status(400).json({ error: "Invalid recipient" });
 
         const sent = await live.conn.sendMessage(jid, { text: String(text).trim() });
-
         try {
             await auditLog.log(req, "session_takeover_send", {
-                target: to,
-                targetType: "session",
+                target: to, targetType: "session",
                 details: { sessionId, preview: String(text).slice(0, 100) }
             });
         } catch {}
-
         res.json({ success: true, messageId: sent?.key?.id || null });
     } catch (e) {
         console.error("takeover/send:", e.message);
@@ -1207,47 +1207,33 @@ app.post("/api/admin/takeover/send", adminAuth.requireAdmin, async (req, res) =>
 });
 
 // ============================================
-//   ADMIN — ANTI-ABUSE DASHBOARD
+//   ADMIN — ANTI-ABUSE
 // ============================================
 app.get("/api/admin/abuse", adminAuth.requireAdmin, async (req, res) => {
     try {
-        const now = Date.now();
-        const sevenDaysAgo = new Date(now - 7 * 86400000);
-
-        const banned = await Account.countDocuments({ isBanned: true });
-
-        const bans7d = await auditLog.AuditLog.countDocuments({
-            action: { $in: ["ban_account", "delete_account"] },
-            timestamp: { $gte: sevenDaysAgo }
-        });
-
-        const kills7d = await auditLog.AuditLog.countDocuments({
-            action: "kill_session",
-            timestamp: { $gte: sevenDaysAgo }
-        });
-
-        const pauses7d = await auditLog.AuditLog.countDocuments({
-            action: { $in: ["session_pause", "session_resume"] },
-            timestamp: { $gte: sevenDaysAgo }
-        });
-
-        const bans = await auditLog.AuditLog.find({
-            action: { $in: ["ban_account", "delete_account"] }
-        }).sort({ timestamp: -1 }).limit(15).lean();
-
-        const kills = await auditLog.AuditLog.find({
-            action: "kill_session"
-        }).sort({ timestamp: -1 }).limit(15).lean();
-
-        const pauses = await auditLog.AuditLog.find({
-            action: { $in: ["session_pause", "session_resume"] }
-        }).sort({ timestamp: -1 }).limit(15).lean();
-
-        res.json({
-            success: true,
-            stats: { banned, bans7d, kills7d, pauses7d },
+        const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
+        const [
+            banned, bans7d, kills7d, pauses7d,
             bans, kills, pauses
-        });
+        ] = await Promise.all([
+            Account.countDocuments({ isBanned: true }),
+            auditLog.AuditLog.countDocuments({
+                action: { $in: ["ban_account", "delete_account"] },
+                timestamp: { $gte: sevenDaysAgo }
+            }),
+            auditLog.AuditLog.countDocuments({ action: "kill_session", timestamp: { $gte: sevenDaysAgo } }),
+            auditLog.AuditLog.countDocuments({
+                action: { $in: ["session_pause", "session_resume"] },
+                timestamp: { $gte: sevenDaysAgo }
+            }),
+            auditLog.AuditLog.find({ action: { $in: ["ban_account", "delete_account"] } })
+                .sort({ timestamp: -1 }).limit(15).lean(),
+            auditLog.AuditLog.find({ action: "kill_session" })
+                .sort({ timestamp: -1 }).limit(15).lean(),
+            auditLog.AuditLog.find({ action: { $in: ["session_pause", "session_resume"] } })
+                .sort({ timestamp: -1 }).limit(15).lean()
+        ]);
+        res.json({ success: true, stats: { banned, bans7d, kills7d, pauses7d }, bans, kills, pauses });
     } catch (e) {
         console.error("abuse:", e.message);
         res.status(500).json({ error: e.message });
@@ -1260,16 +1246,15 @@ app.get("/api/admin/abuse", adminAuth.requireAdmin, async (req, res) => {
 app.get("/api/admin/commands/list", adminAuth.requireAdmin, async (req, res) => {
     try {
         const handler = require("./handler");
-        const cache = handler.getCommandCache ? handler.getCommandCache() : new Map();
-        const auto = handler.getAutoCache ? handler.getAutoCache() : new Map();
+        const cache = typeof handler.getCommandCache === "function" ? handler.getCommandCache() : new Map();
+        const auto  = typeof handler.getAutoCache === "function" ? handler.getAutoCache() : new Map();
 
         const seen = new Set();
         const list = [];
-
         for (const [, mod] of cache) {
             if (seen.has(mod)) continue;
             seen.add(mod);
-            if (typeof mod.execute !== 'function') continue;
+            if (typeof mod?.execute !== 'function') continue;
             list.push({
                 name: mod.name || 'unknown',
                 category: (mod.category || 'general').toLowerCase(),
@@ -1277,20 +1262,16 @@ app.get("/api/admin/commands/list", adminAuth.requireAdmin, async (req, res) => 
                 aliases: Array.isArray(mod.aliases) ? mod.aliases : []
             });
         }
-
         for (const [, mod] of auto) {
             if (seen.has(mod)) continue;
             seen.add(mod);
-            if (typeof mod.execute !== 'function') {
-                list.push({
-                    name: mod.name || 'unknown',
-                    category: (mod.category || 'auto').toLowerCase(),
-                    description: mod.description || 'Auto-detection module',
-                    aliases: []
-                });
-            }
+            list.push({
+                name: mod?.name || 'unknown',
+                category: (mod?.category || 'auto').toLowerCase(),
+                description: mod?.description || 'Auto-detection module',
+                aliases: []
+            });
         }
-
         res.json({ success: true, commands: list, total: list.length });
     } catch (e) {
         console.error("commands/list:", e.message);
@@ -1304,7 +1285,7 @@ app.post("/api/admin/commands/run", adminAuth.requireAdmin, async (req, res) => 
         if (!command) return res.status(400).json({ error: "command required" });
 
         const handler = require("./handler");
-        const cache = handler.getCommandCache ? handler.getCommandCache() : new Map();
+        const cache = typeof handler.getCommandCache === "function" ? handler.getCommandCache() : new Map();
         const mod = cache.get(String(command).toLowerCase());
         if (!mod || typeof mod.execute !== 'function') {
             return res.status(404).json({ error: `Command "${command}" not found` });
@@ -1314,32 +1295,32 @@ app.post("/api/admin/commands/run", adminAuth.requireAdmin, async (req, res) => 
         const liveSession = activeSessionId ? global.sessions.get(activeSessionId) : null;
         const conn = liveSession?.conn || null;
 
-        const ownerJid = config.ownerNumber ? config.ownerNumber + "@s.whatsapp.net" : null;
+        const ownerJid = config.ownerNumber ? toJid(String(config.ownerNumber)) : null;
 
         const captured = [];
         let fakeConn = conn;
-
         if (conn) {
-            fakeConn = Object.create(conn);
-            fakeConn.sendMessage = async (jid, content, ...rest) => {
-                captured.push({
-                    jid: typeof jid === "string" ? jid : "(object)",
-                    content: summarizeContent(content)
-                });
-                return { key: { id: "test_" + Date.now() } };
-            };
+            fakeConn = new Proxy(conn, {
+                get(target, prop, receiver) {
+                    if (prop === "sendMessage") {
+                        return async (jid, content) => {
+                            captured.push({
+                                jid: typeof jid === "string" ? jid : "(object)",
+                                content: summarizeContent(content)
+                            });
+                            return { key: { id: "test_" + crypto.randomUUID() } };
+                        };
+                    }
+                    return Reflect.get(target, prop, receiver);
+                }
+            });
         }
 
         const fakeMsg = {
-            key: {
-                remoteJid: ownerJid || "test@s.whatsapp.net",
-                fromMe: true,
-                id: "test_" + Date.now()
-            },
+            key: { remoteJid: ownerJid || "test@s.whatsapp.net", fromMe: true, id: "test_" + crypto.randomUUID() },
             message: { conversation: (config.prefix || ".") + command + (args ? " " + args : "") },
             pushName: "Admin Test"
         };
-
         const fakeCtx = {
             from: ownerJid || "test@s.whatsapp.net",
             sender: ownerJid || "test@s.whatsapp.net",
@@ -1350,9 +1331,7 @@ app.post("/api/admin/commands/run", adminAuth.requireAdmin, async (req, res) => 
             conn: fakeConn,
             msg: fakeMsg,
             userId: activeSessionId || "test",
-            isGroup: false,
-            isChannel: false,
-            isStatus: false,
+            isGroup: false, isChannel: false, isStatus: false,
             body: fakeMsg.message.conversation,
             args: args ? String(args).split(/\s+/) : [],
             command: String(command).toLowerCase(),
@@ -1361,30 +1340,24 @@ app.post("/api/admin/commands/run", adminAuth.requireAdmin, async (req, res) => 
         };
 
         let errorMsg = null;
+        let timer;
         try {
             await Promise.race([
                 mod.execute(fakeConn, fakeMsg, fakeCtx.args, fakeCtx),
-                new Promise((_, rej) => setTimeout(() => rej(new Error("Command timeout (60s)")), 60000))
+                new Promise((_, rej) => { timer = setTimeout(() => rej(new Error("Command timeout (60s)")), 60000); })
             ]);
         } catch (e) {
             errorMsg = e.message;
+        } finally {
+            if (timer) clearTimeout(timer);
         }
 
         let output = "";
-        if (captured.length) {
-            output = captured.map(c => c.content).join("\n\n---\n\n");
-        } else if (errorMsg) {
-            output = "❌ " + errorMsg;
-        } else {
-            output = "(Command ran but sent no output)";
-        }
+        if (captured.length) output = captured.map(c => c.content).join("\n\n---\n\n");
+        else if (errorMsg)   output = "❌ " + errorMsg;
+        else                 output = "(Command ran but sent no output)";
 
-        res.json({
-            success: !errorMsg,
-            output,
-            captured: captured.length,
-            error: errorMsg || undefined
-        });
+        res.json({ success: !errorMsg, output, captured: captured.length, error: errorMsg || undefined });
     } catch (e) {
         console.error("commands/run:", e.message);
         res.status(500).json({ error: e.message });
@@ -1392,11 +1365,11 @@ app.post("/api/admin/commands/run", adminAuth.requireAdmin, async (req, res) => 
 });
 
 // ============================================
-//   ADMIN — AUDIT LOG
+//   ADMIN — AUDIT
 // ============================================
 app.get("/api/admin/audit", adminAuth.requireAdmin, async (req, res) => {
     try {
-        const limit = Math.min(parseInt(req.query.limit) || 200, 500);
+        const limit = Math.min(parseInt(req.query.limit, 10) || 200, 500);
         const rows = await auditLog.list(limit, {
             adminEmail: req.query.adminEmail,
             action: req.query.action
@@ -1410,7 +1383,7 @@ app.get("/api/admin/audit", adminAuth.requireAdmin, async (req, res) => {
 // ============================================
 app.get("/api/admin/analytics/top-commands", adminAuth.requireAdmin, async (req, res) => {
     try {
-        const days = parseInt(req.query.days) || 7;
+        const days = parseInt(req.query.days, 10) || 7;
         const rows = await analytics.topCommands(days, 25);
         res.json({ success: true, commands: rows });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1418,7 +1391,7 @@ app.get("/api/admin/analytics/top-commands", adminAuth.requireAdmin, async (req,
 
 app.get("/api/admin/analytics/hourly", adminAuth.requireAdmin, async (req, res) => {
     try {
-        const hours = parseInt(req.query.hours) || 24;
+        const hours = parseInt(req.query.hours, 10) || 24;
         const rows = await analytics.hourlyVolume(hours);
         res.json({ success: true, hours: rows });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1486,7 +1459,7 @@ app.post("/api/payments/checkout", auth.requireAuth, async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post("/api/payments/webhook/paystack", express.json(), async (req, res) => {
+app.post("/api/payments/webhook/paystack", express.json({ limit: "5mb" }), async (req, res) => {
     try {
         if (!payments.verifyPaystackSignature(req)) return res.status(401).json({ error: "Bad signature" });
         const ok = await payments.handlePaystackWebhook(req.body);
@@ -1494,9 +1467,10 @@ app.post("/api/payments/webhook/paystack", express.json(), async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post("/api/payments/webhook/stripe", express.json({ type: "application/json" }), async (req, res) => {
+app.post("/api/payments/webhook/stripe", async (req, res) => {
     try {
-        const ok = await payments.handleStripeWebhook(req.body);
+        const raw = req._stripeRaw || req.body;
+        const ok = await payments.handleStripeWebhook(raw, req.headers);
         res.json({ received: true, processed: ok });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1514,20 +1488,18 @@ app.post("/api/admin/ai/chat", adminAuth.requireAdmin, async (req, res) => {
 });
 
 app.post("/api/admin/ai/clear/:sessionId", adminAuth.requireAdmin, async (req, res) => {
-    aiChat.clearHistory(req.params.sessionId);
-    res.json({ success: true });
+    try {
+        aiChat.clearHistory(req.params.sessionId);
+        await auditLog.log(req, "ai_clear_history", { target: req.params.sessionId, targetType: "ai" }).catch(() => {});
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ============================================
-//   ADMIN — AI TOGGLE
-// ============================================
 app.get("/api/admin/ai/status", adminAuth.requireAdmin, async (req, res) => {
     try {
         const status = await aiSettings.getStatus();
-        const currentSessions = global.sessions.size;
-        const activeSessions = Array.from(global.sessions.values())
-            .filter(s => s.conn?.user).length;
-
+        let activeSessions = 0;
+        for (const [, s] of global.sessions) if (s.conn?.user) activeSessions++;
         res.json({
             success: true,
             enabled: status.enabled,
@@ -1539,72 +1511,33 @@ app.get("/api/admin/ai/status", adminAuth.requireAdmin, async (req, res) => {
                 model: process.env.AI_MODEL || "openai/gpt-oss-20b",
                 provider: process.env.AI_PROVIDER || "openai"
             },
-            sessions: {
-                total: currentSessions,
-                active: activeSessions
-            }
+            sessions: { total: global.sessions.size, active: activeSessions }
         });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post("/api/admin/ai/toggle", adminAuth.requireAdmin, async (req, res) => {
     try {
         const { enabled } = req.body || {};
-        if (typeof enabled !== "boolean") {
-            return res.status(400).json({ error: "enabled (boolean) required" });
-        }
-
+        if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
         await aiSettings.setAiEnabled(enabled);
         await aiSettings.refreshCache();
-
-        try {
-            await auditLog.log(req, enabled ? "ai_enable" : "ai_disable", {
-                targetType: "system",
-                details: { enabled }
-            });
-        } catch {}
-
+        try { await auditLog.log(req, enabled ? "ai_enable" : "ai_disable", { targetType: "system", details: { enabled } }); } catch {}
         console.log(fancy(`🤖 AI ${enabled ? "ENABLED" : "DISABLED"} by admin`));
-
-        res.json({
-            success: true,
-            enabled,
-            message: `AI has been turned ${enabled ? "ON" : "OFF"}`
-        });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+        res.json({ success: true, enabled, message: `AI has been turned ${enabled ? "ON" : "OFF"}` });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post("/api/admin/ai/toggle-groups", adminAuth.requireAdmin, async (req, res) => {
     try {
         const { enabled } = req.body || {};
-        if (typeof enabled !== "boolean") {
-            return res.status(400).json({ error: "enabled (boolean) required" });
-        }
-
+        if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
         await aiSettings.setAiGroupsEnabled(enabled);
         await aiSettings.refreshCache();
-
-        try {
-            await auditLog.log(req, enabled ? "ai_groups_enable" : "ai_groups_disable", {
-                targetType: "system",
-                details: { enabled }
-            });
-        } catch {}
-
+        try { await auditLog.log(req, enabled ? "ai_groups_enable" : "ai_groups_disable", { targetType: "system", details: { enabled } }); } catch {}
         console.log(fancy(`🤖 AI group replies ${enabled ? "ENABLED" : "DISABLED"}`));
-
-        res.json({
-            success: true,
-            groupsEnabled: enabled,
-            message: `Group replies ${enabled ? "ON" : "OFF"}`
-        });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+        res.json({ success: true, groupsEnabled: enabled, message: `Group replies ${enabled ? "ON" : "OFF"}` });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ============================================
@@ -1625,34 +1558,58 @@ app.post("/api/store/download/:id", auth.requireAuth, async (req, res) => {
         const account = await Account.findById(req.account.id);
         if (!account) return res.status(404).json({ error: "Account not found" });
 
-        if (app.price > 0) {
-            if (account.credits < app.price) {
+        const price = typeof app.price === "number" ? app.price : 0;
+
+        if (price > 0) {
+            const upd = await Account.updateOne(
+                { _id: req.account.id, credits: { $gte: price } },
+                { $inc: { credits: -price } }
+            );
+            if (upd.modifiedCount === 0) {
                 return res.status(400).json({ error: "Insufficient coins. Please top up." });
             }
-            account.credits -= app.price;
-            await account.save();
         }
 
-        app.downloads += 1;
-        await app.save();
-        
-        res.json({ success: true, url: app.downloadUrl, newBalance: account.credits });
+        try {
+            app.downloads = (app.downloads || 0) + 1;
+            await app.save();
+        } catch (e) {
+            if (price > 0) {
+                await Account.updateOne({ _id: req.account.id }, { $inc: { credits: price } }).catch(() => {});
+            }
+            throw e;
+        }
+
+        const fresh = await Account.findById(req.account.id).select("credits").lean();
+        res.json({ success: true, url: app.downloadUrl, newBalance: fresh?.credits ?? account.credits });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post("/api/admin/store/apps", adminAuth.requireAdmin, async (req, res) => {
     try {
-        const { name, description, icon, category, price, downloadUrl } = req.body;
-        const newApp = await StoreApp.create({ name, description, icon, category, price, downloadUrl });
+        const { name, description, icon, category, price, downloadUrl } = req.body || {};
+        if (!name || !downloadUrl) return res.status(400).json({ error: "name and downloadUrl required" });
+        const newApp = await StoreApp.create({
+            name: String(name).slice(0, 100),
+            description: String(description || "").slice(0, 500),
+            icon: String(icon || "").slice(0, 300),
+            category: String(category || "general").slice(0, 40),
+            price: typeof price === "number" && price >= 0 ? Math.floor(price) : 0,
+            downloadUrl: String(downloadUrl).slice(0, 500)
+        });
         res.json({ success: true, app: newApp });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.delete("/api/admin/store/apps/:id", adminAuth.requireAdmin, async (req, res) => {
     try {
-        await StoreApp.findByIdAndDelete(req.params.id);
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+        const deleted = await StoreApp.findByIdAndDelete(req.params.id);
+        if (!deleted) return res.status(404).json({ success: false, error: "App not found" });
+        res.json({ success: true, message: "App deleted successfully" });
+    } catch (e) {
+        console.error("Delete Error:", e);
+        res.status(500).json({ success: false, error: e.message });
+    }
 });
 
 // ============================================
@@ -1672,12 +1629,14 @@ app.get("/api/web/chat/:jid", auth.requireAuth, async (req, res) => {
         const filter = { chatJid: jid };
         if (sessionId) filter.sessionId = sessionId;
 
-        const total     = await MessageLog.countDocuments(filter);
-        const sent      = await MessageLog.countDocuments({ ...filter, fromMe: true });
-        const received  = await MessageLog.countDocuments({ ...filter, fromMe: false });
-        const firstMsg  = await MessageLog.findOne(filter).sort({ timestamp: 1 }).lean();
-        const lastMsg   = await MessageLog.findOne(filter).sort({ timestamp: -1 }).lean();
-        const lastLive  = await LiveEvent.findOne({ chatJid: jid }).sort({ timestamp: -1 }).lean();
+        const [total, sent, received, firstMsg, lastMsg, lastLive] = await Promise.all([
+            MessageLog.countDocuments(filter),
+            MessageLog.countDocuments({ ...filter, fromMe: true }),
+            MessageLog.countDocuments({ ...filter, fromMe: false }),
+            MessageLog.findOne(filter).sort({ timestamp: 1 }).lean(),
+            MessageLog.findOne(filter).sort({ timestamp: -1 }).lean(),
+            LiveEvent.findOne({ chatJid: jid }).sort({ timestamp: -1 }).lean()
+        ]);
 
         const jidType = (() => {
             const bare = jid.split(":")[0];
@@ -1704,7 +1663,10 @@ app.get("/api/web/chat/:jid", auth.requireAuth, async (req, res) => {
                 lastSeen:  lastMsg?.timestamp  || null
             }
         });
-    } catch (e) { console.error("web/chat error:", e.message); res.status(500).json({ error: e.message }); }
+    } catch (e) {
+        console.error("web/chat error:", e.message);
+        res.status(500).json({ error: e.message });
+    }
 });
 
 app.post("/api/web/history", auth.requireAuth, async (req, res) => {
@@ -1720,7 +1682,7 @@ app.post("/api/web/history", auth.requireAuth, async (req, res) => {
         const filter = { chatJid };
         if (sessionId) filter.sessionId = sessionId;
         if (before)    filter.timestamp = { $lt: new Date(before) };
-        const max = Math.min(parseInt(limit) || 50, 100);
+        const max = Math.min(parseInt(limit, 10) || 50, 100);
         const events = await LiveEvent.find(filter).sort({ timestamp: -1 }).limit(max).lean();
         res.json({ success: true, events: events.reverse() });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1744,56 +1706,59 @@ app.post("/api/web/send", auth.requireAuth, async (req, res) => {
         if (!live?.conn?.user) return res.status(400).json({ error: "Session not connected" });
 
         const content = { text: String(text).trim() };
+
         if (replyToId) {
-            const quoted = await MessageLog.findOne({ sessionId, _id: replyToId }).lean();
+            const quoted = await LiveEvent.findOne({ _id: replyToId, sessionId }).lean().catch(() => null)
+                || await MessageLog.findOne({ _id: replyToId, sessionId }).lean().catch(() => null);
             if (quoted) {
-                content.quoted = {
-                    key: { remoteJid: quoted.chatJid, fromMe: quoted.fromMe === true, id: quoted._id.toString() },
-                    message: { conversation: quoted.body || "" }
-                };
+                const waId = quoted?.extra?.messageId || quoted?.msgKeyId || null;
+                if (waId) {
+                    content.quoted = {
+                        key: {
+                            remoteJid: quoted.chatJid,
+                            fromMe: quoted.fromMe === true,
+                            id: waId
+                        },
+                        message: { conversation: quoted.body || quoted.text || "" }
+                    };
+                }
             }
         }
 
         const sent = await live.conn.sendMessage(to, content);
 
-        try {
-            let accountId2 = null;
-            const meta = await SessionSettings.findOne({ sessionId }).lean();
-            if (meta?.ownerAccountId) accountId2 = meta.ownerAccountId;
-            await MessageLog.create({
-                accountId: accountId2,
-                sessionId, chatJid: to,
-                chatName: live.conn.store?.contacts?.[to]?.name || to.split("@")[0],
-                chatType: to.endsWith("@g.us") ? "group" : "dm",
-                isGroup: to.endsWith("@g.us"),
-                senderJid: live.conn.user?.id || null,
-                senderName: "You",
-                senderPhone: live.conn.user?.id?.split(":")[0]?.split("@")[0] || null,
-                fromMe: true,
-                body: String(text).trim().slice(0, 500),
-                messageType: "conversation",
-                timestamp: new Date()
-            });
-        } catch (logErr) { console.error("web/send MessageLog error:", logErr.message); }
+        MessageLog.create({
+            accountId,
+            sessionId, chatJid: to,
+            chatName: live.conn.store?.contacts?.[to]?.name || to.split("@")[0],
+            chatType: to.endsWith("@g.us") ? "group" : "dm",
+            isGroup: to.endsWith("@g.us"),
+            senderJid: live.conn.user?.id || null,
+            senderName: "You",
+            senderPhone: live.conn.user?.id?.split(":")[0]?.split("@")[0] || null,
+            fromMe: true,
+            body: String(text).trim().slice(0, 500),
+            messageType: "conversation",
+            timestamp: new Date()
+        }).catch(err => console.error("web/send MessageLog error:", err.message));
 
-        try {
-            const liveFeed = require("./lib/liveFeed");
-            const botId = live.conn.user?.id || "";
-            await liveFeed.push({
-                sessionId, type: "message", chatJid: to,
-                chatName: to.split("@")[0],
-                isGroup: to.endsWith("@g.us"),
-                senderJid: botId,
-                senderName: "You",
-                senderPhone: botId.split(":")[0]?.split("@")[0] || null,
-                fromMe: true,
-                text: String(text).trim().slice(0, 500),
-                extra: { source: "web", msgKeyId: sent?.key?.id || null }
-            });
-        } catch (feedErr) { console.error("web/send liveFeed error:", feedErr.message); }
+        require("./lib/liveFeed").push({
+            sessionId, type: "message", chatJid: to,
+            chatName: to.split("@")[0],
+            isGroup: to.endsWith("@g.us"),
+            senderJid: live.conn.user?.id || "",
+            senderName: "You",
+            senderPhone: live.conn.user?.id?.split(":")[0]?.split("@")[0] || null,
+            fromMe: true,
+            text: String(text).trim().slice(0, 500),
+            extra: { source: "web", messageId: sent?.key?.id || null }
+        }).catch(err => console.error("web/send liveFeed error:", err.message));
 
         res.json({ success: true, messageId: sent?.key?.id || null });
-    } catch (e) { console.error("web/send error:", e.message); res.status(500).json({ error: e.message }); }
+    } catch (e) {
+        console.error("web/send error:", e.message);
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // ============================================
@@ -1803,30 +1768,32 @@ app.get("/api/chat/sessions", auth.requireAuth, async (req, res) => {
     try {
         const accountId = req.account.id;
         const isAdmin = await checkIsAdmin(accountId, req.account.email);
-        let filter = {};
-        if (!isAdmin) filter.ownerAccountId = accountId;
+        const filter = isAdmin ? {} : { ownerAccountId: accountId };
         const sessions = await SessionSettings.find(filter).lean();
-        const list = [];
 
-        for (const s of sessions) {
-            const count = await MessageLog.countDocuments({ sessionId: s.sessionId });
-            const last = await MessageLog.findOne({ sessionId: s.sessionId }).sort({ timestamp: -1 }).lean();
-            let ownerEmail = null;
-            if (isAdmin && s.ownerAccountId) {
-                const owner = await Account.findById(s.ownerAccountId).select("email").lean();
-                ownerEmail = owner?.email || null;
-            }
+        const ownerIds = [...new Set(sessions.map(s => s.ownerAccountId).filter(Boolean))];
+        const owners = isAdmin && ownerIds.length
+            ? await Account.find({ _id: { $in: ownerIds } }).select("email").lean()
+            : [];
+        const emailById = new Map(owners.map(o => [String(o._id), o.email]));
+
+        const list = await Promise.all(sessions.map(async s => {
+            const [count, last] = await Promise.all([
+                MessageLog.countDocuments({ sessionId: s.sessionId }),
+                MessageLog.findOne({ sessionId: s.sessionId }).sort({ timestamp: -1 }).lean()
+            ]);
             let phone = s.phoneNumber || null;
             if (!phone && last?.senderPhone && !last.isGroup) phone = last.senderPhone;
-            list.push({
+            return {
                 sessionId: s.sessionId,
                 phone: phone || "pending…",
-                ownerEmail,
+                ownerEmail: s.ownerAccountId ? emailById.get(String(s.ownerAccountId)) || null : null,
                 messageCount: count,
                 lastMsgTime: last?.timestamp || null,
                 lastPreview: last?.body || ""
-            });
-        }
+            };
+        }));
+
         list.sort((a, b) => new Date(b.lastMsgTime || 0) - new Date(a.lastMsgTime || 0));
         res.json({ success: true, isAdmin, sessions: list });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1859,9 +1826,11 @@ app.get("/api/chat/list", auth.requireAuth, async (req, res) => {
             }},
             { $sort: { lastTime: -1 } }
         ]);
-        const groups = chats.filter(c => c.isGroup);
-        const dms = chats.filter(c => !c.isGroup);
-        res.json({ success: true, groups, dms });
+        res.json({
+            success: true,
+            groups: chats.filter(c => c.isGroup),
+            dms: chats.filter(c => !c.isGroup)
+        });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1876,9 +1845,10 @@ app.get("/api/chat/conversation", auth.requireAuth, async (req, res) => {
             const own = await SessionSettings.findOne({ sessionId, ownerAccountId: accountId }).lean();
             if (!own) return res.status(403).json({ error: "You don't own this session" });
         }
-        const limit = Math.min(parseInt(req.query.limit) || 300, 500);
-        const messages = await MessageLog.find({ sessionId, chatJid }).sort({ timestamp: 1 }).limit(limit).lean();
-        res.json({ success: true, total: messages.length, messages });
+        const limit = Math.min(parseInt(req.query.limit, 10) || 300, 500);
+        const messages = await MessageLog.find({ sessionId, chatJid })
+            .sort({ timestamp: -1 }).limit(limit).lean();
+        res.json({ success: true, total: messages.length, messages: messages.reverse() });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2058,25 +2028,38 @@ app.get("/api/v1/me", apiKeys.requireApiKeyV1, async (req, res) => {
 
 app.get("/api/v1/sessions", apiKeys.requireApiKeyV1, async (req, res) => {
     try {
-        let filter = {};
-        if (!req.isApiAdmin) filter.ownerAccountId = req.apiAccount._id.toString();
+        const filter = req.isApiAdmin ? {} : { ownerAccountId: String(req.apiAccount._id) };
         const sessions = await SessionSettings.find(filter).lean();
-        const list = [];
-        for (const s of sessions) {
+        const list = await Promise.all(sessions.map(async s => {
             const live = global.sessions.get(s.sessionId);
             const msgCount = await MessageLog.countDocuments({ sessionId: s.sessionId });
-            list.push({
+            return {
                 sessionId: s.sessionId,
                 phone: s.phoneNumber || "pending",
                 connected: !!live?.conn?.user,
                 ready: !!live?.socketReady,
+                paused: live?._paused === true,
                 jid: live?.conn?.user?.id || null,
                 messageCount: msgCount
-            });
-        }
+            };
+        }));
         res.json({ success: true, count: list.length, sessions: list });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+async function pickTargetSession(req, requestedId) {
+    if (requestedId) {
+        const t = global.sessions.get(requestedId);
+        if (t?.conn?.user) return t;
+    }
+    const filter = req.isApiAdmin ? {} : { ownerAccountId: String(req.apiAccount._id) };
+    const owned = await SessionSettings.find(filter).lean();
+    for (const s of owned) {
+        const live = global.sessions.get(s.sessionId);
+        if (live?.conn?.user) return live;
+    }
+    return null;
+}
 
 app.post("/api/v1/send", apiKeys.requireApiKeyV1, async (req, res) => {
     try {
@@ -2084,22 +2067,14 @@ app.post("/api/v1/send", apiKeys.requireApiKeyV1, async (req, res) => {
         if (!to)   return res.status(400).json({ error: "to required" });
         if (!text) return res.status(400).json({ error: "text required" });
 
-        let target = sessionId ? global.sessions.get(sessionId) : null;
-        if (!target) {
-            let filter = {};
-            if (!req.isApiAdmin) filter.ownerAccountId = req.apiAccount._id.toString();
-            const owned = await SessionSettings.find(filter).lean();
-            for (const s of owned) {
-                const live = global.sessions.get(s.sessionId);
-                if (live?.conn?.user) { target = live; break; }
-            }
-        }
-        if (!target?.conn?.user) return res.status(400).json({ error: "No active session available" });
-
         if (!req.isApiAdmin && sessionId) {
-            const own = await SessionSettings.findOne({ sessionId, ownerAccountId: req.apiAccount._id.toString() }).lean();
+            const own = await SessionSettings.findOne({ sessionId, ownerAccountId: String(req.apiAccount._id) }).lean();
             if (!own) return res.status(403).json({ error: "You don't own this session" });
         }
+
+        const target = await pickTargetSession(req, sessionId);
+        if (!target?.conn?.user) return res.status(400).json({ error: "No active session available" });
+
         const jid = toJid(to);
         if (!jid) return res.status(400).json({ error: "Invalid recipient" });
         const sent = await target.conn.sendMessage(jid, { text: String(text).trim() });
@@ -2112,22 +2087,16 @@ app.post("/api/v1/send-media", apiKeys.requireApiKeyV1, async (req, res) => {
         const { sessionId, to, url, caption, type } = req.body || {};
         if (!to)  return res.status(400).json({ error: "to required" });
         if (!url) return res.status(400).json({ error: "url required" });
+        if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: "url must be http(s)" });
 
-        let target = sessionId ? global.sessions.get(sessionId) : null;
-        if (!target) {
-            let filter = {};
-            if (!req.isApiAdmin) filter.ownerAccountId = req.apiAccount._id.toString();
-            const owned = await SessionSettings.find(filter).lean();
-            for (const s of owned) {
-                const live = global.sessions.get(s.sessionId);
-                if (live?.conn?.user) { target = live; break; }
-            }
-        }
-        if (!target?.conn?.user) return res.status(400).json({ error: "No active session" });
         if (!req.isApiAdmin && sessionId) {
-            const own = await SessionSettings.findOne({ sessionId, ownerAccountId: req.apiAccount._id.toString() }).lean();
+            const own = await SessionSettings.findOne({ sessionId, ownerAccountId: String(req.apiAccount._id) }).lean();
             if (!own) return res.status(403).json({ error: "You don't own this session" });
         }
+
+        const target = await pickTargetSession(req, sessionId);
+        if (!target?.conn?.user) return res.status(400).json({ error: "No active session" });
+
         const jid = toJid(to);
         if (!jid) return res.status(400).json({ error: "Invalid recipient" });
         const mediaType = type === 'video' ? 'video' : 'image';
@@ -2143,16 +2112,7 @@ app.post("/api/v1/check-number", apiKeys.requireApiKeyV1, async (req, res) => {
     try {
         const { number, sessionId } = req.body || {};
         if (!number) return res.status(400).json({ error: "number required" });
-        let target = sessionId ? global.sessions.get(sessionId) : null;
-        if (!target) {
-            let filter = {};
-            if (!req.isApiAdmin) filter.ownerAccountId = req.apiAccount._id.toString();
-            const owned = await SessionSettings.find(filter).lean();
-            for (const s of owned) {
-                const live = global.sessions.get(s.sessionId);
-                if (live?.conn?.user) { target = live; break; }
-            }
-        }
+        const target = await pickTargetSession(req, sessionId);
         if (!target?.conn?.user) return res.status(400).json({ error: "No active session" });
         const jid = toJid(number);
         if (!jid) return res.status(400).json({ error: "Invalid number" });
@@ -2165,14 +2125,16 @@ app.get("/api/v1/stats", apiKeys.requireApiKeyV1, async (req, res) => {
     try {
         const filter = {};
         if (!req.isApiAdmin) {
-            const owned = await SessionSettings.find({ ownerAccountId: req.apiAccount._id.toString() }).lean();
+            const owned = await SessionSettings.find({ ownerAccountId: String(req.apiAccount._id) }).lean();
             filter.sessionId = { $in: owned.map(o => o.sessionId) };
         }
-        const total    = await MessageLog.countDocuments(filter);
-        const received = await MessageLog.countDocuments({ ...filter, fromMe: false });
-        const sent     = await MessageLog.countDocuments({ ...filter, fromMe: true });
         const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
-        const today = await MessageLog.countDocuments({ ...filter, timestamp: { $gte: startOfDay } });
+        const [total, received, sent, today] = await Promise.all([
+            MessageLog.countDocuments(filter),
+            MessageLog.countDocuments({ ...filter, fromMe: false }),
+            MessageLog.countDocuments({ ...filter, fromMe: true }),
+            MessageLog.countDocuments({ ...filter, timestamp: { $gte: startOfDay } })
+        ]);
         res.json({ success: true, total, received, sent, today });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -2190,6 +2152,7 @@ app.get("/api/v1/admin/sessions", apiKeys.requireApiKeyV1, requireV1Admin, async
                 sessionId: id,
                 connected: !!s.conn?.user,
                 ready: s.socketReady,
+                paused: s._paused === true,
                 jid: s.conn?.user?.id || null,
                 phone: s.conn?.user?.id ? s.conn.user.id.split(":")[0] : null,
                 startedAt: s.startedAt
@@ -2208,7 +2171,7 @@ app.post("/api/v1/admin/sessions/:id/kill", apiKeys.requireApiKeyV1, requireV1Ad
 
 app.get("/api/v1/admin/accounts", apiKeys.requireApiKeyV1, requireV1Admin, async (req, res) => {
     try {
-        const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+        const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
         const accounts = await Account.find({}).sort({ createdAt: -1 }).limit(limit).select("-password").lean();
         res.json({ success: true, total: accounts.length, accounts });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -2231,8 +2194,10 @@ app.post("/api/v1/admin/send", apiKeys.requireApiKeyV1, requireV1Admin, async (r
 
 app.get("/api/v1/admin/stats", apiKeys.requireApiKeyV1, requireV1Admin, async (req, res) => {
     try {
-        const totalAccounts = await Account.countDocuments();
-        const totalMessages = await MessageLog.countDocuments();
+        const [totalAccounts, totalMessages] = await Promise.all([
+            Account.countDocuments(),
+            MessageLog.countDocuments()
+        ]);
         let activeSessions = 0;
         for (const [, s] of global.sessions) if (s.conn?.user) activeSessions++;
         res.json({
@@ -2264,7 +2229,7 @@ app.get("/api/status", (req, res) => {
 });
 
 app.post("/api/send", requireApiKey, async (req, res) => {
-    const { sessionId, to, text } = req.body;
+    const { sessionId, to, text } = req.body || {};
     if (!to || !text) return res.status(400).json({ error: "to and text required" });
     const target = sessionId || firstActive();
     const session = target ? global.sessions.get(target) : null;
@@ -2272,14 +2237,14 @@ app.post("/api/send", requireApiKey, async (req, res) => {
     const jid = toJid(to);
     if (!jid) return res.status(400).json({ error: "Invalid recipient" });
     try {
-        const sent = await session.conn.sendMessage(jid, { text });
+        const sent = await session.conn.sendMessage(jid, { text: String(text).trim() });
         res.json({ success: true, messageId: sent.key.id });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get("/api/pair", async (req, res) => {
-    const sessionId = String(req.query.sessionId || "").trim();
-    const num = String(req.query.num || "").replace(/\D/g, "");
+app.post("/api/pair", async (req, res) => {
+    const sessionId = String(req.query.sessionId || req.body?.sessionId || "").trim();
+    const num = String(req.query.num || req.body?.num || "").replace(/\D/g, "");
     if (!sessionId) return res.status(400).json({ error: "Missing sessionId" });
     if (!num || num.length < 10 || num.length > 15) return res.status(400).json({ error: "Invalid phone number" });
 
@@ -2288,38 +2253,54 @@ app.get("/api/pair", async (req, res) => {
         const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
         if (token) accountId = auth.verifyToken(token).id;
     } catch {}
-
     if (!accountId) return res.status(401).json({ error: "Login required to pair" });
+
+    const last = global.__pairCooldown.get(sessionId) || 0;
+    if (Date.now() - last < 30000) {
+        return res.status(429).json({ error: "Please wait 30s before requesting another pairing code" });
+    }
+    global.__pairCooldown.set(sessionId, Date.now());
 
     try {
         const account = await Account.findById(accountId);
         if (!account) return res.status(404).json({ error: "Account not found" });
+        if (account.isBanned) return res.status(403).json({ error: "Account is banned" });
 
         const isUserAdmin = isAdminAccount(account);
-
         if (!isUserAdmin && account.credits <= 0) {
-            return res.status(403).json({ 
-                error: "You have 0 credits. Please buy credits to pair a new session." 
-            });
+            return res.status(403).json({ error: "You have 0 credits. Please buy credits to pair a new session." });
         }
 
-        const code = await requestPairingCodeForSession(sessionId, num);
-        
-        await SessionSettings.updateOne(
-            { sessionId },
-            { $set: { ownerAccountId: accountId, phoneNumber: num } },
-            { upsert: true }
-        );
-
+        let reserved = false;
         if (!isUserAdmin) {
-            account.credits -= 1;
-            await account.save();
+            const upd = await Account.updateOne(
+                { _id: accountId, credits: { $gt: 0 } },
+                { $inc: { credits: -1 } }
+            );
+            if (upd.modifiedCount === 0) {
+                return res.status(403).json({ error: "You have 0 credits. Please buy credits to pair a new session." });
+            }
+            reserved = true;
+        }
+
+        let code;
+        try {
+            code = await requestPairingCodeForSession(sessionId, num);
+            await SessionSettings.updateOne(
+                { sessionId },
+                { $set: { ownerAccountId: accountId, phoneNumber: num } },
+                { upsert: true }
+            );
+        } catch (e) {
+            if (reserved) await Account.updateOne({ _id: accountId }, { $inc: { credits: 1 } }).catch(() => {});
+            console.error("Pair error:", e.message);
+            return res.status(500).json({ error: "Pairing failed. Please try again." });
         }
 
         res.json({ success: true, sessionId, code });
     } catch (e) {
-        console.error("Pair error:", e);
-        res.status(500).json({ error: e.message });
+        console.error("Pair outer error:", e.message);
+        res.status(500).json({ error: "Pairing failed" });
     }
 });
 
@@ -2337,10 +2318,12 @@ app.get("/api/stats", async (req, res) => {
             totalSessions: global.sessions.size, activeSessions,
             maxSessions: MAX_SESSIONS, uptime: process.uptime()
         });
-    } catch (error) { res.json({ error: error.message }); }
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
-// ---------- Channel: info ----------
+// ---------- Channel ----------
 app.get("/api/channel/info", requireApiKey, async (req, res) => {
     const sid = firstActive();
     const session = sid ? global.sessions.get(sid) : null;
@@ -2374,7 +2357,7 @@ app.post("/api/channel/post", requireApiKey, async (req, res) => {
     const session = sid ? global.sessions.get(sid) : null;
     if (!session?.conn?.user) return res.status(400).json({ error: "No active session" });
     try {
-        const sent = await session.conn.sendMessage(config.newsletterJid, { text: text.trim() });
+        const sent = await session.conn.sendMessage(config.newsletterJid, { text: String(text).trim().slice(0, 4000) });
         res.json({ success: true, messageId: sent.key.id });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -2410,7 +2393,10 @@ async function requestPairingCodeForSession(sessionId, phoneNumber) {
 
         let code;
         try { code = await session.conn.requestPairingCode(phoneNumber); }
-        catch { await new Promise(r => setTimeout(r, 2000)); code = await session.conn.requestPairingCode(phoneNumber); }
+        catch {
+            await new Promise(r => setTimeout(r, 2000));
+            code = await session.conn.requestPairingCode(phoneNumber);
+        }
 
         const formatted = code.match(/.{1,4}/g)?.join("-") || code;
         session.pairing = formatted;
@@ -2420,16 +2406,25 @@ async function requestPairingCodeForSession(sessionId, phoneNumber) {
     });
 }
 
-// ---------------- SOCKET BOOT ----------------
-async function bootSocket(sessionId, session) {
-    session.id = sessionId;
+// ---------------- SOCKET BOOT (mutex per session) ----------------
+function bootSocket(sessionId, session) {
+    if (global.__bootLocks.has(sessionId)) {
+        return global.__bootLocks.get(sessionId);
+    }
+    const p = _bootSocketImpl(sessionId, session).finally(() => {
+        global.__bootLocks.delete(sessionId);
+    });
+    global.__bootLocks.set(sessionId, p);
+    return p;
+}
 
+async function _bootSocketImpl(sessionId, session) {
+    session.id = sessionId;
     await initMongo();
 
     const collection = global.mongoClient.db("xmd303").collection("authState");
     const { state, saveCreds } = await useMongoDBAuthState(collection, sessionId);
-    const { version } = await fetchLatestWaWebVersion();
-
+    const { version } = await getCachedWaVersion();
     console.log(fancy(`[${sessionId}] WA version: ${JSON.stringify(version)}`));
 
     const conn = makeWASocket({
@@ -2454,105 +2449,79 @@ async function bootSocket(sessionId, session) {
     session.conn = conn;
     conn.ev.on("creds.update", saveCreds);
 
-    // ============================================================
-    //   LIVE FEED: WRAP sendMessage TO LOG OUTGOING (with media)
-    // ============================================================
+    // ---- Wrap sendMessage (non-blocking outgoing log) ----
     const originalSend = conn.sendMessage.bind(conn);
-    conn.sendMessage = async function (jid, content, ...rest) {
-        try {
-            const liveFeed = require("./lib/liveFeed");
-            const mediaCache = require("./lib/mediaCache");
-            const myJid = conn.user?.id || "";
-            const myPhone = myJid.split(":")[0]?.split("@")[0]?.replace(/\D/g, "") || null;
-            const myName = config.botName || "Bot";
+    conn.sendMessage = function (jid, content, ...rest) {
+        (async () => {
+            try {
+                const liveFeed = require("./lib/liveFeed");
+                const mediaCache = require("./lib/mediaCache");
+                const myJid = conn.user?.id || "";
+                const myPhone = myJid.split(":")[0]?.split("@")[0]?.replace(/\D/g, "") || null;
+                const myName = config.botName || "Bot";
+                const isGroupChat = String(jid).endsWith("@g.us");
+                const text = content?.text || content?.caption || null;
 
-            const isGroupChat = String(jid).endsWith("@g.us");
-            const text = content?.text || content?.caption || null;
-
-            let mediaType = null;
-            let mediaPath = null;
-            let mediaSize = null;
-            let fileName = null;
-
-            const trySave = (buf, ext, mime) => {
-                try {
-                    const p = mediaCache.saveMedia(sessionId, buf, ext, mime);
-                    mediaSize = buf.length;
-                    return p;
-                } catch (e) {
-                    console.error("saveMedia:", e.message);
-                    return null;
+                let mediaType = null, mediaPath = null, mediaSize = null, fileName = null;
+                const trySave = (buf, ext, mime) => {
+                    try { const p = mediaCache.saveMedia(sessionId, buf, ext, mime); mediaSize = buf.length; return p; }
+                    catch (e) { console.error("saveMedia:", e.message); return null; }
+                };
+                if (content?.image) {
+                    mediaType = "image";
+                    const v = content.image;
+                    if (Buffer.isBuffer(v)) mediaPath = trySave(v, "jpg", "image/jpeg");
+                    else if (v?.url) mediaPath = v.url;
+                    else if (typeof v === "string") mediaPath = v;
+                } else if (content?.video) {
+                    mediaType = "video";
+                    const v = content.video;
+                    if (Buffer.isBuffer(v)) mediaPath = trySave(v, "mp4", "video/mp4");
+                    else if (v?.url) mediaPath = v.url;
+                    else if (typeof v === "string") mediaPath = v;
+                } else if (content?.audio) {
+                    mediaType = "audio";
+                    const v = content.audio;
+                    if (Buffer.isBuffer(v)) mediaPath = trySave(v, "mp3", "audio/mpeg");
+                    else if (v?.url) mediaPath = v.url;
+                    else if (typeof v === "string") mediaPath = v;
+                } else if (content?.sticker) {
+                    mediaType = "sticker";
+                    const v = content.sticker;
+                    if (Buffer.isBuffer(v)) mediaPath = trySave(v, "webp", "image/webp");
+                    else if (v?.url) mediaPath = v.url;
+                    else if (typeof v === "string") mediaPath = v;
+                } else if (content?.document) {
+                    mediaType = "document";
+                    const v = content.document;
+                    fileName = v?.fileName || "file";
+                    if (Buffer.isBuffer(v)) mediaPath = trySave(v, "bin", v?.mimetype || "application/octet-stream");
+                    else if (v?.url) mediaPath = v.url;
+                    else if (typeof v === "string") mediaPath = v;
                 }
-            };
 
-            if (content?.image) {
-                mediaType = "image";
-                const v = content.image;
-                if (Buffer.isBuffer(v)) mediaPath = trySave(v, "jpg", "image/jpeg");
-                else if (v?.url) mediaPath = v.url;
-                else if (typeof v === "string") mediaPath = v;
-            } else if (content?.video) {
-                mediaType = "video";
-                const v = content.video;
-                if (Buffer.isBuffer(v)) mediaPath = trySave(v, "mp4", "video/mp4");
-                else if (v?.url) mediaPath = v.url;
-                else if (typeof v === "string") mediaPath = v;
-            } else if (content?.audio) {
-                mediaType = "audio";
-                const v = content.audio;
-                if (Buffer.isBuffer(v)) mediaPath = trySave(v, "mp3", "audio/mpeg");
-                else if (v?.url) mediaPath = v.url;
-                else if (typeof v === "string") mediaPath = v;
-            } else if (content?.sticker) {
-                mediaType = "sticker";
-                const v = content.sticker;
-                if (Buffer.isBuffer(v)) mediaPath = trySave(v, "webp", "image/webp");
-                else if (v?.url) mediaPath = v.url;
-                else if (typeof v === "string") mediaPath = v;
-            } else if (content?.document) {
-                mediaType = "document";
-                const v = content.document;
-                fileName = v?.fileName || "file";
-                if (Buffer.isBuffer(v)) mediaPath = trySave(v, "bin", v?.mimetype || "application/octet-stream");
-                else if (v?.url) mediaPath = v.url;
-                else if (typeof v === "string") mediaPath = v;
+                let chatName = String(jid).split("@")[0];
+                if (isGroupChat) {
+                    try { chatName = (await conn.groupMetadata(jid)).subject || chatName; } catch {}
+                }
+
+                await liveFeed.push({
+                    sessionId, type: "message",
+                    chatJid: jid, chatName, isGroup: isGroupChat,
+                    senderJid: myJid, senderName: myName, senderPhone: myPhone,
+                    recipientJid: jid, recipientName: chatName,
+                    recipientPhone: String(jid).split("@")[0]?.replace(/\D/g, "") || null,
+                    fromMe: true,
+                    text: text || (mediaType ? `[${mediaType}]` : "[message]"),
+                    mediaType, mediaPath, mediaSize, fileName,
+                    extra: { direction: "outgoing", messageId: null }
+                });
+            } catch (e) {
+                console.error("liveFeed outgoing:", e.message);
             }
-
-            let chatName = String(jid).split("@")[0];
-            if (isGroupChat) {
-                try {
-                    const meta = await conn.groupMetadata(jid);
-                    chatName = meta.subject || chatName;
-                } catch {}
-            }
-
-            await liveFeed.push({
-                sessionId,
-                type: "message",
-                chatJid: jid,
-                chatName,
-                isGroup: isGroupChat,
-                senderJid: myJid,
-                senderName: myName,
-                senderPhone: myPhone,
-                recipientJid: jid,
-                recipientName: chatName,
-                recipientPhone: String(jid).split("@")[0]?.replace(/\D/g, "") || null,
-                fromMe: true,
-                text: text || (mediaType ? `[${mediaType}]` : "[message]"),
-                mediaType,
-                mediaPath,
-                mediaSize,
-                fileName,
-                extra: { direction: "outgoing", messageId: null }
-            });
-        } catch (e) {
-            console.error("liveFeed outgoing:", e.message);
-        }
-
+        })();
         return originalSend(jid, content, ...rest);
     };
-    // ============================================================
 
     conn.ev.on("connection.update", async (update) => {
         const { connection, lastDisconnect } = update;
@@ -2587,9 +2556,7 @@ async function bootSocket(sessionId, session) {
                 try {
                     await conn.subscribeNewsletterUpdates(config.newsletterJid);
                     console.log(fancy(`📰 [${sessionId}] subscribed to ${config.newsletterJid}`));
-                } catch (e) {
-                    console.log(`Newsletter subscribe skipped: ${e.message}`);
-                }
+                } catch (e) { console.log(`Newsletter subscribe skipped: ${e.message}`); }
             }
 
             if (!session.welcomed && config.ownerNumber) {
@@ -2614,12 +2581,14 @@ async function bootSocket(sessionId, session) {
                 console.log(fancy(`⏸️ [${sessionId}] paused — not reconnecting`));
                 return;
             }
-
             if (code === 401 || code === DisconnectReason.loggedOut) {
                 await logoutSession(sessionId);
                 return;
             }
-            if (code === 440) return;
+            if (code === 440) {
+                global.sessions.delete(sessionId);
+                return;
+            }
             setTimeout(() => {
                 if (!global.sessions.has(sessionId)) return;
                 if (session._paused) return;
@@ -2630,27 +2599,31 @@ async function bootSocket(sessionId, session) {
 
     conn.ev.on("messages.upsert", async (m) => {
         try {
-            if (m.messages && m.messages[0]?.message && !m.messages[0].key.fromMe) {
-                try { await captureIncomingMedia(conn, m.messages[0], sessionId); }
+            const batch = Array.isArray(m.messages) ? m.messages : [];
+            for (const msg of batch) {
+                if (!msg?.message) continue;
+                if (msg.key?.fromMe) continue;
+                try { await captureIncomingMedia(conn, msg, sessionId); }
                 catch (e) { console.error("captureIncomingMedia:", e.message); }
             }
-
             require("./handler")(conn, m, sessionId);
+        } catch (err) {
+            console.error(`[${sessionId}] handler:`, err);
         }
-        catch (err) { console.error(`[${sessionId}] handler:`, err); }
     });
 
     conn.ev.on("call", async (calls) => {
-        if (!config.anticall) return;
-        for (const call of calls) {
-            if (call.status === "offer") {
-                try { await conn.rejectCall(call.id, call.from); } catch {}
-            }
-        }
         try {
+            if (config.anticall) {
+                for (const call of calls) {
+                    if (call.status === "offer") {
+                        try { await conn.rejectCall(call.id, call.from); } catch {}
+                    }
+                }
+            }
             const h = require("./handler");
             if (typeof h.handleCallEvent === "function") await h.handleCallEvent(conn, calls);
-        } catch {}
+        } catch (e) { console.error("call handler:", e.message); }
     });
 
     conn.ev.on("group-participants.update", async (update) => {
@@ -2669,11 +2642,10 @@ async function logoutSession(sessionId) {
         try { s.conn?.ev.removeAllListeners(); s.conn?.ws?.close(); } catch {}
         global.sessions.delete(sessionId);
     }
-    try {
-        await initMongo();
-        const c = global.mongoClient.db("xmd303").collection("authState");
-        await c.deleteMany({ _id: { $regex: `^${sessionId}:` } });
-    } catch {}
+    await initMongo();
+    const c = global.mongoClient.db("xmd303").collection("authState");
+    const safe = escapeRegex(sessionId);
+    await c.deleteMany({ _id: { $regex: `^${safe}:` } });
 }
 
 async function resumeAllSessions() {
@@ -2684,13 +2656,19 @@ async function resumeAllSessions() {
         const metas = await c.find({ _id: { $regex: ":meta$" } }).toArray();
         console.log(fancy(`🔄 Resuming ${metas.length} session(s)...`));
         for (const meta of metas) {
-            const sessionId = meta._id.replace(/:meta$/, "");
+            const sessionId = String(meta._id).replace(/:meta$/, "");
             if (global.sessions.has(sessionId)) continue;
             if (global.sessions.size >= MAX_SESSIONS) break;
             const session = { conn: null, socketReady: false, pairing: null, pairingNumber: null, startedAt: Date.now(), welcomed: false };
             global.sessions.set(sessionId, session);
-            try { await bootSocket(sessionId, session); }
-            catch (e) { console.error(`Resume ${sessionId}:`, e.message); }
+            try {
+                await Promise.race([
+                    bootSocket(sessionId, session),
+                    new Promise((_, rej) => setTimeout(() => rej(new Error("boot timeout")), 75000))
+                ]);
+            } catch (e) {
+                console.error(`Resume ${sessionId}:`, e.message);
+            }
             await new Promise(r => setTimeout(r, 1500));
         }
     } catch (e) { console.error("Resume error:", e.message); }
@@ -2700,7 +2678,9 @@ async function resumeAllSessions() {
 async function shutdown(sig) {
     console.log(fancy(`\n🛑 ${sig} — shutting down...`));
     try {
-        for (const [, s] of global.sessions) { s.conn?.ev?.removeAllListeners(); s.conn?.ws?.close(); }
+        for (const [, s] of global.sessions) {
+            try { s.conn?.ev?.removeAllListeners(); s.conn?.ws?.close(); } catch {}
+        }
         if (global.mongoClient) await global.mongoClient.close();
         if (mongoose.connection.readyState === 1) await mongoose.connection.close();
     } catch {}
@@ -2708,7 +2688,10 @@ async function shutdown(sig) {
 }
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("unhandledRejection", r => console.error("Unhandled:", r));
+process.on("unhandledRejection", r => {
+    console.error("Unhandled:", r);
+    try { analytics.recordError?.("unhandledRejection", String(r)); } catch {}
+});
 
 // ---------------- BOOT ----------------
 (async () => {
@@ -2716,8 +2699,13 @@ process.on("unhandledRejection", r => console.error("Unhandled:", r));
 
     try {
         const watchdog = require("./lib/sessionWatchdog");
-        watchdog.start(bootSocket, { logger: console });
-        console.log(fancy("🐕 Session watchdog started"));
+        if (typeof watchdog.start === "function") {
+            watchdog.start(bootSocket, {
+                logger: console,
+                isPaused: (session) => session?._paused === true
+            });
+            console.log(fancy("🐕 Session watchdog started"));
+        }
     } catch (e) { console.error("Watchdog init error:", e.message); }
 
     try {
@@ -2725,9 +2713,7 @@ process.on("unhandledRejection", r => console.error("Unhandled:", r));
         console.log(fancy("🧹 Media cleanup job started"));
     } catch (e) { console.error("Media cleanup init error:", e.message); }
 
-    try { await initMongo(); await resumeAllSessions(); }
-    catch (e) { console.error("Boot error:", e.message); console.error("→ Bot will run in dashboard-only mode"); }
-
+    // Listen FIRST so dashboard is reachable immediately
     app.listen(PORT, () => {
         console.log(fancy(`🌐 Dashboard: http://localhost:${PORT}`));
         console.log(fancy(`🔗 Register:  http://localhost:${PORT}/register`));
@@ -2735,4 +2721,7 @@ process.on("unhandledRejection", r => console.error("Unhandled:", r));
         console.log(fancy(`📊 Dashboard: http://localhost:${PORT}/dashboard`));
         console.log(fancy(`🛡️  Admin:     http://localhost:${PORT}/admin`));
     });
+
+    // Then resume existing sessions in background
+    resumeAllSessions().catch(e => console.error("resumeAllSessions error:", e.message));
 })();
